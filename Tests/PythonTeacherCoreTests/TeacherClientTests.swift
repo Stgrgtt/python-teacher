@@ -866,6 +866,183 @@ final class TeacherClientTests: XCTestCase {
         }
     }
 
+    func testAnthropicUsesMessagesAPIWithHeaderKeyAndUserFirstConversation() async throws {
+        let session = makeSession { request in
+            XCTAssertEqual(request.url?.absoluteString, "https://api.anthropic.com/v1/messages")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "x-api-key"), "test-not-a-real-key")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "anthropic-version"), "2023-06-01")
+            XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
+            XCTAssertEqual(request.timeoutInterval, 90)
+            let body = try self.body(of: request)
+            XCTAssertFalse(String(describing: body).contains("test-not-a-real-key"))
+            XCTAssertEqual(body["model"] as? String, "claude-test")
+            XCTAssertEqual(body["max_tokens"] as? Int, 1800 + 8000)
+            for key in ["store", "tools", "stream", "output_config", "input", "instructions"] { XCTAssertNil(body[key], key) }
+            let system = try XCTUnwrap(body["system"] as? String)
+            XCTAssertTrue(system.contains("Do not provide complete exercise solutions"))
+            XCTAssertTrue(system.contains("Do not ask the learner to paste"))
+            let messages = try XCTUnwrap(body["messages"] as? [[String: String]])
+            XCTAssertEqual(messages.compactMap { $0["role"] }, ["user", "assistant", "user"])
+            XCTAssertEqual(messages[1]["content"], "Earlier teacher reply")
+            let latest = try XCTUnwrap(messages[2]["content"])
+            XCTAssertTrue(latest.hasPrefix("Follow-up\n\nCurrent workspace snapshot (captured for this request; supersedes older conversation):\nSynthetic"))
+            XCTAssertTrue(latest.hasSuffix("\n\nWhat about now?"))
+            return (200, Data(#"{"type":"message","content":[{"type":"thinking","thinking":"private"},{"type":"text","text":"What happens at zero?"}],"stop_reason":"end_turn","usage":{"input_tokens":40,"output_tokens":9}}"#.utf8))
+        }
+        defer { session.invalidateAndCancel() }
+        let reply = try await TeacherClient(apiKey: "test-not-a-real-key", model: "claude-test", provider: .anthropic, session: session)
+            .respond(context: "Synthetic", question: "What about now?", history: [("assistant", "Earlier teacher reply"), ("user", "Follow-up")])
+        XCTAssertEqual(reply.text, "What happens at zero?")
+        XCTAssertEqual(reply.inputTokens, 40)
+        XCTAssertEqual(reply.outputTokens, 9)
+    }
+
+    func testAnthropicGenerationStreamsStructuredOutputAndAcceptsOnlyEndTurn() async throws {
+        let chapter = Curriculum.chapters[0]
+        let text = String(decoding: try JSONSerialization.data(withJSONObject: exercisePayload(title: "Claude practice", topics: chapter.practiceTopics)), as: UTF8.self)
+        let events: [[String: Any]] = [
+            ["type": "message_start", "message": ["usage": ["input_tokens": 120, "output_tokens": 1]]],
+            ["type": "content_block_delta", "index": 0, "delta": ["type": "thinking_delta", "thinking": "private reasoning"]],
+            ["type": "content_block_delta", "index": 1, "delta": ["type": "text_delta", "text": String(text.prefix(20))]],
+            ["type": "ping"],
+            ["type": "content_block_delta", "index": 1, "delta": ["type": "text_delta", "text": String(text.dropFirst(20))]],
+            ["type": "message_delta", "delta": ["stop_reason": "end_turn"], "usage": ["output_tokens": 300]],
+            ["type": "message_stop"]
+        ]
+        let stream = try events.map(streamEvent).reduce(Data(), +)
+        let session = makeSession { request in
+            XCTAssertEqual(request.timeoutInterval, 300)
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Accept"), "text/event-stream")
+            let body = try self.body(of: request)
+            XCTAssertEqual(body["stream"] as? Bool, true)
+            XCTAssertEqual(body["max_tokens"] as? Int, 12000 + 8000)
+            let format = try XCTUnwrap((body["output_config"] as? [String: Any])?["format"] as? [String: Any])
+            XCTAssertEqual(format["type"] as? String, "json_schema")
+            let schema = try XCTUnwrap(format["schema"] as? [String: Any])
+            XCTAssertEqual(schema["additionalProperties"] as? Bool, false)
+            let coverage = try XCTUnwrap((schema["properties"] as? [String: Any])?["coverage"] as? [String: Any])
+            XCTAssertEqual(coverage["required"] as? [String], chapter.practiceTopics.map(\.id))
+            XCTAssertTrue((body["system"] as? String)?.contains("Every assert site must execute and pass") == true)
+            let messages = try XCTUnwrap(body["messages"] as? [[String: String]])
+            XCTAssertEqual(messages.count, 1)
+            let prompt = try XCTUnwrap(messages[0]["content"])
+            XCTAssertTrue(prompt.contains(chapter.lesson))
+            self.assertNoAssessmentContent(in: prompt)
+            return (200, stream)
+        }
+        defer { session.invalidateAndCancel() }
+        let (exercise, reply) = try await TeacherClient(apiKey: "test-not-a-real-key", model: "claude-test", provider: .anthropic, session: session)
+            .generate(chapter: chapter)
+        XCTAssertEqual(exercise.title, "Claude practice")
+        XCTAssertEqual(reply.inputTokens, 120)
+        XCTAssertEqual(reply.outputTokens, 300)
+    }
+
+    func testGoogleAndXAIUseChatCompletionsForChatAndStreamingGeneration() async throws {
+        let chapter = Curriculum.chapters[0]
+        let text = String(decoding: try JSONSerialization.data(withJSONObject: exercisePayload(title: "Compatible practice", topics: chapter.practiceTopics)), as: UTF8.self)
+        for (provider, endpoint) in [(TeacherProvider.google, "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"),
+                                     (.xAI, "https://api.x.ai/v1/chat/completions")] {
+            let session = makeSession { request in
+                XCTAssertEqual(request.url?.absoluteString, endpoint)
+                XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer test-not-a-real-key")
+                let body = try self.body(of: request)
+                XCTAssertFalse(String(describing: body).contains("test-not-a-real-key"))
+                XCTAssertEqual(body["model"] as? String, "compatible-test")
+                for key in ["store", "tools", "input", "instructions"] { XCTAssertNil(body[key], key) }
+                let messages = try XCTUnwrap(body["messages"] as? [[String: String]])
+                XCTAssertEqual(messages.first?["role"], "system")
+                XCTAssertTrue(messages.first?["content"]?.contains("no prior Python knowledge") == true)
+                if body["stream"] as? Bool == true {
+                    XCTAssertEqual(request.timeoutInterval, 300)
+                    XCTAssertEqual((body["stream_options"] as? [String: Bool])?["include_usage"], true)
+                    XCTAssertEqual(body["max_tokens"] as? Int, 12000 + 8000)
+                    let format = try XCTUnwrap(body["response_format"] as? [String: Any])
+                    XCTAssertEqual(format["type"] as? String, "json_schema")
+                    let jsonSchema = try XCTUnwrap(format["json_schema"] as? [String: Any])
+                    XCTAssertEqual(jsonSchema["strict"] as? Bool, true)
+                    XCTAssertEqual((jsonSchema["schema"] as? [String: Any])?["additionalProperties"] as? Bool, false)
+                    let chunks: [[String: Any]] = [
+                        ["choices": [["index": 0, "delta": ["role": "assistant", "content": String(text.prefix(30))], "finish_reason": NSNull()]]],
+                        ["choices": [["index": 0, "delta": ["content": String(text.dropFirst(30))], "finish_reason": "stop"]], "usage": NSNull()],
+                        ["choices": [], "usage": ["prompt_tokens": 70, "completion_tokens": 210]]
+                    ]
+                    return (200, try chunks.map(self.streamEvent).reduce(Data(), +) + Data("data: [DONE]\n\n".utf8))
+                }
+                XCTAssertEqual(request.timeoutInterval, 90)
+                XCTAssertEqual(body["max_tokens"] as? Int, 1800 + 8000)
+                for key in ["response_format", "stream_options"] { XCTAssertNil(body[key], key) }
+                XCTAssertEqual(messages.last?["content"], "Help me reason")
+                return (200, Data(#"{"choices":[{"index":0,"message":{"role":"assistant","content":"What happens at zero?"},"finish_reason":"stop"}],"usage":{"prompt_tokens":30,"completion_tokens":6}}"#.utf8))
+            }
+            let client = TeacherClient(apiKey: "test-not-a-real-key", model: "compatible-test", provider: provider, session: session)
+            let reply = try await client.respond(context: "Synthetic", question: "Help me reason")
+            XCTAssertEqual(reply.text, "What happens at zero?")
+            XCTAssertEqual(reply.inputTokens, 30)
+            XCTAssertEqual(reply.outputTokens, 6)
+            let (exercise, generated) = try await client.generate(chapter: chapter)
+            XCTAssertEqual(exercise.title, "Compatible practice", provider.rawValue)
+            XCTAssertEqual(generated.inputTokens, 70)
+            XCTAssertEqual(generated.outputTokens, 210)
+            session.invalidateAndCancel()
+        }
+    }
+
+    func testProviderStreamsRejectTruncationRefusalAndMissingCompletion() throws {
+        func run(_ provider: TeacherProvider, _ events: [[String: Any]], done: Bool = false) throws -> (streamed: TeacherReply?, atEnd: TeacherReply?) {
+            var decoder = TeacherClient.StreamDecoder(provider: provider)
+            var reply: TeacherReply?
+            let data = try events.map(streamEvent).reduce(Data(), +) + (done ? Data("data: [DONE]\n\n".utf8) : Data())
+            for byte in data { if let value = try decoder.append(byte) { reply = value } }
+            return (reply, decoder.finish())
+        }
+        let text: [String: Any] = ["type": "content_block_delta", "delta": ["type": "text_delta", "text": "{}"]]
+        for reason in ["max_tokens", "refusal", "pause_turn"] {
+            XCTAssertThrowsError(try run(.anthropic, [text, ["type": "message_delta", "delta": ["stop_reason": reason]]]), reason)
+        }
+        XCTAssertThrowsError(try run(.anthropic, [text, ["type": "message_stop"]]), "message_stop without end_turn")
+        XCTAssertThrowsError(try run(.anthropic, [["type": "error", "error": ["message": "PRIVATE_DIAGNOSTIC"]]])) { error in
+            XCTAssertFalse(error.localizedDescription.contains("PRIVATE_DIAGNOSTIC"))
+        }
+        XCTAssertThrowsError(try run(.anthropic, [["delta": "untyped"]]))
+        let unfinished = try run(.anthropic, [text, ["type": "message_delta", "delta": ["stop_reason": "end_turn"]]])
+        XCTAssertNil(unfinished.streamed)
+        XCTAssertNil(unfinished.atEnd, "EOF before message_stop is incomplete")
+        let content: [String: Any] = ["choices": [["delta": ["content": "{}"]]]]
+        let stop: [String: Any] = ["choices": [["delta": [String: String](), "finish_reason": "stop"]]]
+        for provider in [TeacherProvider.google, .xAI] {
+            for reason in ["length", "content_filter"] {
+                XCTAssertThrowsError(try run(provider, [content, ["choices": [["delta": [String: String](), "finish_reason": reason]]]]), reason)
+            }
+            XCTAssertThrowsError(try run(provider, [["choices": [["delta": ["refusal": "No"]]]]]))
+            XCTAssertThrowsError(try run(provider, [["error": ["message": "PRIVATE_DIAGNOSTIC"]]]))
+            XCTAssertThrowsError(try run(provider, [content], done: true), "[DONE] without a stop finish reason")
+            XCTAssertThrowsError(try run(provider, [["unexpected": true]]))
+            XCTAssertNil(try run(provider, [content]).atEnd, "EOF without a finish reason is incomplete")
+            XCTAssertNil(try run(provider, [stop]).atEnd, "a stop without text is not a reply")
+            let closed = try run(provider, [content, stop])
+            XCTAssertNil(closed.streamed)
+            XCTAssertEqual(closed.atEnd?.text, "{}", "a stream closed after a normal stop is complete")
+            XCTAssertEqual(try run(provider, [content, stop], done: true).streamed?.text, "{}")
+        }
+        var decoder = TeacherClient.StreamDecoder(provider: .google)
+        let oversized = try streamEvent(["choices": [["delta": ["content": String(repeating: "x", count: 80_001)]]]])
+        XCTAssertThrowsError(try oversized.forEach { _ = try decoder.append($0) })
+    }
+
+    func testProviderReplyDecodersRejectIncompleteRefusedAndEmptyResponses() {
+        for payload in [#"{"content":[{"type":"text","text":"Partial"}],"stop_reason":"max_tokens"}"#,
+                        #"{"content":[{"type":"text","text":"No"}],"stop_reason":"refusal"}"#,
+                        #"{"content":[],"stop_reason":"end_turn"}"#, "not json"] {
+            XCTAssertThrowsError(try TeacherClient.decodeReply(Data(payload.utf8), provider: .anthropic), payload)
+        }
+        for payload in [#"{"choices":[{"message":{"content":"Partial"},"finish_reason":"length"}]}"#,
+                        #"{"choices":[{"message":{"content":null,"refusal":"No"},"finish_reason":"stop"}]}"#,
+                        #"{"choices":[{"message":{"content":" "},"finish_reason":"stop"}]}"#, #"{"choices":[]}"#] {
+            XCTAssertThrowsError(try TeacherClient.decodeReply(Data(payload.utf8), provider: .xAI), payload)
+        }
+    }
+
     func testEmptyKeyAndInvalidModelFailBeforeNetwork() async {
         for (key, model) in [("", "gpt-4.1-mini"), ("test-not-a-real-key", "invalid model\n")] {
             do {

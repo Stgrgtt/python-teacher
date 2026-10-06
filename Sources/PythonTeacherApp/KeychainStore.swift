@@ -1,4 +1,5 @@
 import Foundation
+import PythonTeacherCore
 import Security
 
 struct KeychainStore {
@@ -6,6 +7,11 @@ struct KeychainStore {
     /// Service used while the app was named Coding Teacher.
     var legacyService = "local.codingteacher.openai"
     private let account = "personal-api-key"
+
+    /// Each provider keeps its own Keychain item; the OpenAI item keeps its original service name.
+    static func provider(_ provider: TeacherProvider) -> KeychainStore {
+        KeychainStore(service: "local.pythonteacher.\(provider.rawValue)")
+    }
 
     func load() throws -> String? {
         try load(service: service)
