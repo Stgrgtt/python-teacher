@@ -57,7 +57,6 @@ final class AppModel: ObservableObject {
     let curriculumGraph: CurriculumGraph
     let store: ProgressStore
     let runner = PythonRunner()
-    private let keychain = KeychainStore()
     private let teacherClientProvider: (() throws -> TeacherClient)?
     private var loading = false
     private var saveTask: Task<Void, Never>?
@@ -717,14 +716,15 @@ final class AppModel: ObservableObject {
         rejectedPractice = nil
     }
 
-    func saveSettings(pythonPath: String, model: String, requestLimit: Int, apiKey: String) {
+    func saveSettings(provider: TeacherProvider, pythonPath: String, model: String, requestLimit: Int, apiKey: String) {
         guard !isBusy else { return }
         do {
             if !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                try keychain.save(apiKey)
+                try KeychainStore.provider(provider).save(apiKey)
                 hasAPIKey = true
             }
             progress.pythonPath = pythonPath.trimmingCharacters(in: .whitespacesAndNewlines)
+            progress.provider = provider
             progress.model = model.trimmingCharacters(in: .whitespacesAndNewlines)
             progress.sessionRequestLimit = max(1, min(requestLimit, 100))
             flushSave()
@@ -732,13 +732,13 @@ final class AppModel: ObservableObject {
         } catch { notice = error.localizedDescription }
     }
 
-    func checkKeyStatus() {
-        do { hasAPIKey = try keychain.load()?.isEmpty == false }
+    func checkKeyStatus(for provider: TeacherProvider) {
+        do { hasAPIKey = try KeychainStore.provider(provider).load()?.isEmpty == false }
         catch { notice = error.localizedDescription }
     }
 
-    func removeKey() {
-        do { try keychain.remove(); hasAPIKey = false }
+    func removeKey(for provider: TeacherProvider) {
+        do { try KeychainStore.provider(provider).remove(); hasAPIKey = false }
         catch { notice = error.localizedDescription }
     }
 
@@ -811,7 +811,7 @@ final class AppModel: ObservableObject {
 
     private func teacherClient() -> TeacherClient? {
         guard cloudConsent else {
-            notice = "Enable cloud teacher access in Settings first. Relevant lesson content, your current code, output, and messages will be sent to OpenAI. Never include confidential information."
+            notice = "Enable cloud teacher access in Settings first. Relevant lesson content, your current code, output, and messages will be sent to \(progress.provider.name). Never include confidential information."
             settingsPresented = true
             return nil
         }
@@ -821,9 +821,9 @@ final class AppModel: ObservableObject {
         }
         do {
             if let teacherClientProvider { return try teacherClientProvider() }
-            guard let key = try keychain.load(), !key.isEmpty else { throw TeacherError.missingKey }
+            guard let key = try KeychainStore.provider(progress.provider).load(), !key.isEmpty else { throw TeacherError.missingKey }
             hasAPIKey = true
-            return TeacherClient(apiKey: key, model: progress.model)
+            return TeacherClient(apiKey: key, model: progress.model, provider: progress.provider)
         } catch { notice = error.localizedDescription; return nil }
     }
 
@@ -916,8 +916,8 @@ enum PracticeGenerationState: Equatable {
     var message: String? {
         switch self {
         case .idle: return nil
-        case .requesting: return "Waiting for OpenAI to start your challenge… Broad exercises can take several minutes. You can cancel at any time."
-        case .receiving(let characters): return "Receiving your exercise from OpenAI… \(characters) characters received. It will be added only after the complete response passes validation."
+        case .requesting: return "Waiting for the AI provider to start your challenge… Broad exercises can take several minutes. You can cancel at any time."
+        case .receiving(let characters): return "Receiving your exercise from the AI provider… \(characters) characters received. It will be added only after the complete response passes validation."
         case .validating: return "Checking the generated reference and starter before adding the exercise…"
         case .cancelled: return "Generation cancelled. No exercise was added."
         case .ready(_, _, let title): return "Added to Practice: \(title). Saved in the exercise picker."

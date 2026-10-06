@@ -603,7 +603,8 @@ public struct ProgressState: Codable, Sendable {
     public var quizAnswers: [String: [String: Int]] = [:]
     public var reflections: [String: String] = [:]
     public var pythonPath: String = "/usr/bin/python3"
-    public var model: String = "gpt-4.1-mini"
+    public var provider: TeacherProvider = .openAI
+    public var model: String = TeacherProvider.openAI.defaultModel
     public var sessionRequestLimit: Int = 20
     public var teacherConversations: [String: [TeacherMessage]] = [:]
     public var studySessions: [StudySession] = []
@@ -616,7 +617,7 @@ public struct ProgressState: Codable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case schemaVersion, rewardPolicyVersion, selectedChapterID, selectedMode, selectedExerciseIDs, drafts, generatedExercises
         case attempts, hintCounts, revealedSolutions, unlockedOverrides, quizAnswers, reflections
-        case pythonPath, model, sessionRequestLimit, teacherConversations
+        case pythonPath, provider, model, sessionRequestLimit, teacherConversations
         case studySessions, activeStudySession, lessonCompletions, celebrationEffectsEnabled
     }
 
@@ -639,6 +640,7 @@ public struct ProgressState: Codable, Sendable {
         quizAnswers = try values.decode([String: [String: Int]].self, forKey: .quizAnswers)
         reflections = try values.decode([String: String].self, forKey: .reflections)
         pythonPath = try values.decode(String.self, forKey: .pythonPath)
+        provider = try values.decodeIfPresent(TeacherProvider.self, forKey: .provider) ?? .openAI
         model = try values.decode(String.self, forKey: .model)
         sessionRequestLimit = try values.decode(Int.self, forKey: .sessionRequestLimit)
         teacherConversations = try values.contains(.teacherConversations)
@@ -681,6 +683,7 @@ public struct ProgressState: Codable, Sendable {
         try values.encode(quizAnswers, forKey: .quizAnswers)
         try values.encode(reflections, forKey: .reflections)
         try values.encode(pythonPath, forKey: .pythonPath)
+        try values.encode(provider, forKey: .provider)
         try values.encode(model, forKey: .model)
         try values.encode(sessionRequestLimit, forKey: .sessionRequestLimit)
         try values.encode(teacherConversations, forKey: .teacherConversations)

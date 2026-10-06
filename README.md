@@ -1,6 +1,6 @@
 # Python Teacher
 
-A native macOS workspace for learning Python from scratch, built with SwiftUI and AppKit. Python Teacher combines short lessons, a code editor, restricted local Python execution, and evidence-based assessments, with an optional OpenAI teacher for explanations and additional practice.
+A native macOS workspace for learning Python from scratch, built with SwiftUI and AppKit. Python Teacher combines short lessons, a code editor, restricted local Python execution, and evidence-based assessments, with an optional AI teacher (OpenAI, Anthropic, Google or xAI) for explanations and additional practice.
 
 The goal is independent understanding, not simply completing exercises. The built-in course works without an API key, an app account, or an application backend. Python is the language you learn; Swift is the language used to build the app.
 
@@ -95,7 +95,7 @@ Friends also need Python 3 installed (see Quick start, step 1). The other option
 | Swift toolchain | Only needed to build: Swift 5.9 or later from Xcode or Command Line Tools. |
 | Python | An installed Python 3. It is not bundled with the app. Python 3.9, 3.10, and 3.12 have been checked. |
 | Restricted execution | `/usr/bin/sandbox-exec` must be available (it is on standard macOS). There is no unrestricted fallback. |
-| OpenAI access | Optional: an API key, used only for the AI teacher and generated practice. API charges may apply. |
+| AI provider access | Optional: an OpenAI, Anthropic, Google (Gemini) or xAI (Grok) API key, used only for the AI teacher and generated practice. API charges may apply. |
 
 There are no third-party Swift dependencies, and built-in exercises need no `pip` packages. To check your tools: `swift --version`, `xcode-select -p`, `python3 --version`. If your Python on `PATH` is a shim (pyenv, etc.), choose the real executable in the app's Settings.
 
@@ -205,10 +205,20 @@ Focus sessions support pause/resume and saved progress. After reopening the app,
 Cloud access is opt-in. To enable it:
 
 1. Open **Settings…**.
-2. Enable **Allow relevant learning content to be sent to OpenAI**.
-3. Enter an OpenAI API key in the secure field. Do not put it in source code, a `.env` file, learner code, or chat.
-4. Select a model available to your API account that supports the **Responses API and structured outputs**. The app defaults to `gpt-4.1-mini`; this can be changed without rebuilding.
-5. Set the request limit and choose **Save settings**.
+2. Under **AI teacher**, choose a **Provider**.
+3. Enable **Allow relevant learning content to be sent to** the chosen provider. Switching to a different provider turns this off until you enable it again for that provider.
+4. Enter that provider's API key in the secure field. Do not put it in source code, a `.env` file, learner code, or chat. Each provider's key is a separate Keychain item, so switching providers does not delete the others.
+5. Enter a model available to your API account that supports **structured outputs**. Switching provider fills in its default; any model identifier can be entered without rebuilding.
+6. Set the request limit and choose **Save settings**.
+
+| Provider | API used | Default model | Key from |
+|---|---|---|---|
+| OpenAI | Responses API (`store: false`) | `gpt-4.1-mini` | platform.openai.com |
+| Anthropic | Messages API with `output_config` structured outputs | `claude-sonnet-5-5` | platform.claude.com |
+| Google | Gemini OpenAI-compatible Chat Completions | `gemini-3.8-flash` | aistudio.google.com |
+| xAI | Chat Completions | `grok-4.7` | console.x.ai |
+
+The same teaching instructions, workspace snapshot, generation prompt and JSON schema are sent to every provider, and every generated exercise goes through the same local validation. Only the wire format differs. The default models for Anthropic, Google and xAI may reason before answering, and those tokens count against the output limit. Those providers therefore receive an extra 8,000 output tokens on top of the app's normal limit.
 
 The teacher is instructed to explain unfamiliar syntax, use small different examples, and ask guiding questions instead of writing complete solutions. Practice includes shortcuts such as **Explain this task simply**, **Help me read the error**, and **Check my reasoning**. Teaching instructions are not a guarantee that every model response will be correct or pedagogically appropriate.
 
@@ -220,13 +230,13 @@ Open **New with AI…** to configure a challenge before sending a request:
 - **Project:** a small working program built toward a clear objective in 3–5 connected milestones. Pick an app-owned brief (for example a vending machine, library checkout desk, parking garage or shop sales report) or describe your own objective in the scenario field. Briefs appear once you reach their earliest suitable chapter and adapt to later chapters; a vending machine becomes a class in *Classes*, for example. Choose 1–3 **focus** sections from the current chapter: only these, plus a final integration milestone, are required coverage. The prerequisite closure is an allowed **toolkit**, not a checklist. The current chapter and its direct prerequisites are sent as full lessons; earlier toolkit chapters are sent as section titles, so prompts stay bounded as the curriculum grows.
 - **Difficulty:** easier, similar, or harder than the current chapter's three reviewed exercises—not relative to the selected or most recently generated exercise. Easier adds guidance and simpler reasoning without removing requested content. Broad coverage can still mean more steps.
 - **Format:** write code, complete starter code, or debug runnable but logically broken code. Each format works with every coverage and difficulty choice.
-- **Optional scenario:** describe a synthetic/public theme, up to 400 characters (for a project with your own objective, this is the objective and is required). It is sent to OpenAI as untrusted theme data; never include private data.
+- **Optional scenario:** describe a synthetic/public theme, up to 400 characters (for a project with your own objective, this is the objective and is required). It is sent to the selected AI provider as untrusted theme data; never include private data.
 
 The generator receives the current lesson in full. It also receives every prerequisite chapter as a compact toolkit of section titles (projects also get the direct prerequisites' full lessons), any app-authored chapter generation notes (for example, how *Testing with unittest* checks your own tests against buggy implementations), and a Python 3.9 compatibility rule. It also gets all current reviewed practice instructions for difficulty calibration, and bounded task excerpts from the eight most recent exercises in the current chapter to discourage repeats beyond title changes. Fresh generation does not include learner drafts, existing reference solutions, tests, or assessment content. An explicitly confirmed repair sends the rejected AI candidate and its validation evidence as described below. Broad requests may take more tokens and cost more. Your existing draft is preserved.
 
 Before generated practice is added, the app validates its structured format and a nonempty coverage entry for every requested lesson section, runs its reference solution successfully, and confirms its starter does not pass. Grading also requires every assertion site to execute. The generated coverage plan is saved in the Check section for inspection. These checks do not independently prove semantic coverage, novelty, difficulty, unambiguous requirements, complete tests, or use of only taught concepts. If a generated exercise is confusing, switch to a reviewed exercise.
 
-After submitting, watch the status beside **New with AI…**: it distinguishes waiting for OpenAI, receiving streamed exercise text (a character count, not a percentage), and local validation, and offers cancellation. Generation uses streaming with a five-minute network inactivity timeout and a ten-minute overall transfer limit; teacher chat retains its 90-second request timeout. These network budgets do not change the restricted Python runner's eight-second limit. Partial streamed exercises are never added, and raw streamed code/reference solutions are not displayed. A successful exercise is saved immediately, selected in the chapter's exercise picker, and identified in an **Added to Practice** message with an **Open exercise** button. Failed requests, rejected exercises, and save failures explicitly say **No exercise was added**, with a persistent reason and an alert for request/validation/save errors. Switching exercises does not erase this status; dismiss it when finished. There are no automatic paid retries.
+After submitting, watch the status beside **New with AI…**: it distinguishes waiting for the AI provider, receiving streamed exercise text (a character count, not a percentage), and local validation, and offers cancellation. Generation uses streaming with a five-minute network inactivity timeout and a ten-minute overall transfer limit; teacher chat retains its 90-second request timeout. These network budgets do not change the restricted Python runner's eight-second limit. Partial streamed exercises are never added, and raw streamed code/reference solutions are not displayed. A successful exercise is saved immediately, selected in the chapter's exercise picker, and identified in an **Added to Practice** message with an **Open exercise** button. Failed requests, rejected exercises, and save failures explicitly say **No exercise was added**, with a persistent reason and an alert for request/validation/save errors. Switching exercises does not erase this status; dismiss it when finished. There are no automatic paid retries.
 
 ### When a generated exercise fails validation
 
@@ -241,7 +251,7 @@ The generator is explicitly told that the runner executes reference code first, 
 - The default cap is **20 requests per app launch**, configurable from 1 to 100.
 - Attempted API calls count toward the cap, including failed, cancelled, or rejected generations, which may still incur charges.
 - Settings displays request counts and provider-reported input/output token usage.
-- Counts reset when the app restarts. This is **not a monetary spending limit**; manage billing separately in your OpenAI account.
+- Counts reset when the app restarts. This is **not a monetary spending limit**; manage billing separately in your provider account.
 - Removing the saved key or leaving cloud access disabled does not prevent offline learning.
 
 ## Privacy, saved work, and backups
@@ -258,9 +268,9 @@ It contains drafts, selected exercises, attempts, generated exercises and their 
 
 API credentials are stored separately in **macOS Keychain**, not in the progress file or exports. Cloud consent is stored in macOS preferences. Treat progress files and backups as private learning data: they contain your code and conversations, and are not encrypted by the application.
 
-### What goes to OpenAI?
+### What goes to the AI provider?
 
-When you use cloud features, relevant lesson/exercise context, current code, recent output, conversation, or generation context is sent as needed. Requests use `store: false`, which does **not** override provider retention policies. Explicitly revealed reference solutions are excluded from teacher conversation context. The teacher has no tools and cannot directly edit learner code, run commands, or award progress.
+When you use cloud features, relevant lesson/exercise context, current code, recent output, conversation, or generation context is sent to the provider selected in Settings, and only that provider. OpenAI requests use `store: false`, which does **not** override OpenAI's retention policies. Anthropic, Google and xAI requests have no equivalent flag in the APIs used, so their own retention policies apply. Explicitly revealed reference solutions are excluded from teacher conversation context. The teacher has no tools and cannot directly edit learner code, run commands, or award progress.
 
 Use synthetic or public data only. Do not paste confidential work, financial records, credentials, or other sensitive material into learning content. Python subprocesses receive a minimal environment without inherited API credentials.
 
@@ -308,7 +318,7 @@ PLAN.md                       Implementation status, evidence, and future work
 HISTORY.md                    Summary of development before the repository restart
 ```
 
-`PythonTeacherCore` is a library product. `PythonTeacher` is the executable product, implemented by the `PythonTeacherApp` target. `AppModel` coordinates the UI with the core services; the core owns curriculum content, progression rules, local persistence, restricted execution, and OpenAI request handling.
+`PythonTeacherCore` is a library product. `PythonTeacher` is the executable product, implemented by the `PythonTeacherApp` target. `AppModel` coordinates the UI with the core services; the core owns curriculum content, progression rules, local persistence, restricted execution, and AI provider request handling (`TeacherProvider`, `TeacherClient`).
 
 ### Verification commands
 
@@ -357,7 +367,7 @@ When changing curriculum content, keep existing chapter/exercise IDs and saved d
 | `Run` finishes but the exercise is not passed | Use **Check solution** in Practice. Inspect required variable names, return values, types, and edge cases; printed output alone may not satisfy checks. |
 | Assessment will not submit or unlock dependent chapters | Answer all theory questions and provide an explanation, then submit. All code checks and theory answers must pass together. |
 | Output says it belongs to a previous code version | Run or check the current code again. Assessment submission always executes fresh checks. |
-| Teacher access is unavailable | Check cloud consent, saved key, model access, and the per-launch cap. HTTP 401 indicates a rejected key; 403 indicates access restrictions; 429 indicates a provider rate/account usage limit. |
+| Teacher access is unavailable | Check the selected provider, cloud consent, that provider's saved key, model access, and the per-launch cap. HTTP 401 indicates a rejected key (Google reports invalid keys as HTTP 400); 403 indicates access restrictions; 429 indicates a provider rate/account usage limit. A model that does not support structured outputs can fail generation while chat still works. |
 | Generated exercise is rejected | Format or executable validation failed. Existing exercises remain unchanged; retry a variation or use reviewed practice. |
 | Saving is blocked | Preserve the existing progress file and export current-session work separately. Recover a compatible backup with the app closed; do not delete the only copy of saved work. |
 | A shared app "can't be opened" or "is damaged" | It is unsigned by Apple. Use **Open Anyway** in Privacy & Security, or run `xattr -dr com.apple.quarantine` on the app (see [Share the app with friends](#share-the-app-with-friends)). |
@@ -369,7 +379,7 @@ This is a personal foundation-learning app, not a full IDE or a complete program
 
 Future directions include HTTP APIs, dependency management, Git, multi-file projects, LLM evaluation, an independent capstone, richer assessment banks, improved spaced review, and distribution signing/notarization. These are planned directions, not shipped features.
 
-See [PLAN.md](PLAN.md) for dated implementation and verification records. Live OpenAI teaching/generation quality, personal Keychain credential setup, and hands-on keyboard-layout behavior remain explicitly unverified by the automated suite.
+See [PLAN.md](PLAN.md) for dated implementation and verification records. Live teaching/generation quality and live API compatibility for every provider, personal Keychain credential setup, and hands-on keyboard-layout behavior remain explicitly unverified by the automated suite.
 
 ## How it was built
 

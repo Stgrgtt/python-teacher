@@ -52,7 +52,7 @@ struct TeacherPanel: View {
                         }
                         .help("Enter to send · Shift+Enter for a new line")
                     HStack {
-                        Text("OpenAI · cloud").font(.caption2).foregroundStyle(.secondary)
+                        Text("\(model.progress.provider.name) · cloud").font(.caption2).foregroundStyle(.secondary)
                         Spacer()
                         Button("Ask teacher") { send() }.buttonStyle(.borderedProminent).tint(.teal)
                             .disabled(model.isBusy || question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -78,7 +78,7 @@ struct TeacherPanel: View {
                         VStack(alignment: .leading, spacing: 14) {
                             Text("Think it through, together.").font(.title3.bold())
                             Text("New to Python? You can ask what a word or symbol means, or ask me to explain the task before writing any code.").font(.callout).foregroundStyle(.secondary)
-                            Text("Built-in hints and reference solutions work without an API key. For personalized discussion and new challenges, configure OpenAI in Settings.").font(.callout).foregroundStyle(.secondary)
+                            Text("Built-in hints and reference solutions work without an API key. For personalized discussion and new challenges, configure an AI provider (OpenAI, Anthropic, Google or xAI) in Settings.").font(.callout).foregroundStyle(.secondary)
                             if model.mode == .practice {
                                 Button("Explain this task simply") { model.askTeacher("Assume I know nothing about Python. Explain what this exercise wants me to do, what the starter provides, and what the expected result means. Explain unfamiliar syntax with a small different example; do not solve the exercise.") }
                                 Button("Help me read the error") { model.askTeacher("Help me interpret the latest output. Ask a guiding question; do not give the solution.") }

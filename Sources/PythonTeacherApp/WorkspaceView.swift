@@ -72,7 +72,7 @@ struct WorkspaceView: View {
         .confirmationDialog("Repair this rejected exercise with one more AI request?", isPresented: $confirmGenerationRepair) {
             Button("Send repair request") { model.repairGeneratedPractice() }
         } message: {
-            Text("This sends the rejected AI exercise and its local validation evidence to OpenAI, not your current draft. API charges and the request limit apply. The repaired result must pass the same validation before it is added.")
+            Text("This sends the rejected AI exercise and its local validation evidence to \(model.progress.provider.name), not your current draft. API charges and the request limit apply. The repaired result must pass the same validation before it is added.")
         }
         .alert("Python Teacher", isPresented: Binding(get: { model.notice != nil && !model.settingsPresented }, set: { if !$0 && !model.settingsPresented { model.notice = nil } })) {
             Button("OK") { model.notice = nil }
@@ -572,7 +572,7 @@ struct PracticeGeneratorView: View {
                             .onChange(of: options.scenario) { _, value in
                                 if value.count > 400 { options.scenario = String(value.prefix(400)) }
                             }
-                        Text("Use synthetic or public examples only. Sent to OpenAI. \(options.scenario.count)/400 characters.")
+                        Text("Use synthetic or public examples only. Sent to \(model.progress.provider.name). \(options.scenario.count)/400 characters.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     DisclosureGroup(options.scope == .project ? "Required coverage · \(max(0, topics.count - 1)) focus sections + integration"
@@ -589,7 +589,7 @@ struct PracticeGeneratorView: View {
                         Text("Coverage sets the minimum workload. Local analysis of the generated starter and reference can increase it for additional work, up to the chapter assessment's workload (one more unit for projects). The exact reward appears on the finished exercise. Viewing the solution halves XP.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
-                    Text("One AI request; your current draft is kept. Requires an OpenAI key and cloud consent. Broad challenges can use more tokens and cost more. The app checks the coverage checklist and runs the reference and starter, but cannot guarantee the AI covered every concept correctly.")
+                    Text("One AI request; your current draft is kept. Requires a \(model.progress.provider.name) API key and cloud consent. Broad challenges can use more tokens and cost more. The app checks the coverage checklist and runs the reference and starter, but cannot guarantee the AI covered every concept correctly.")
                         .font(.caption).foregroundStyle(.secondary)
                 }.padding(.trailing, 6)
             }

@@ -6,6 +6,7 @@ struct SettingsView: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.dismiss) private var dismiss
     @State private var pythonPath = ""
+    @State private var provider = TeacherProvider.openAI
     @State private var modelName = ""
     @State private var apiKey = ""
     @State private var requestLimit = 20
@@ -38,20 +39,24 @@ struct SettingsView: View {
                     Text("Choose the actual Python 3 binary, not a pyenv shim or shell script. Runs have no network access and cannot read your personal files. Standard-library exercises need no packages.").font(.caption).foregroundStyle(.secondary)
                     if !pythonStatus.isEmpty { Text(pythonStatus).font(.caption.monospaced()).textSelection(.enabled) }
                 }
-                Section("OpenAI teacher") {
-                    Toggle("Allow relevant learning content to be sent to OpenAI", isOn: $model.cloudConsent)
-                    Text("Cloud features send lesson context, current code, output, and conversation as needed. Do not include confidential work or banking data. API calls request store: false; this does not override the provider's retention policies. Built-in lessons, hints, and tests remain available offline.").font(.caption).foregroundStyle(.secondary)
-                    SecureField(model.hasAPIKey ? "Replace saved API key (optional)" : "OpenAI API key", text: $apiKey)
+                Section("AI teacher") {
+                    Picker("Provider", selection: $provider) {
+                        ForEach(TeacherProvider.allCases) { Text($0.displayName).tag($0) }
+                    }
+                    Toggle("Allow relevant learning content to be sent to \(provider.name)", isOn: $model.cloudConsent)
+                    Text("Cloud features send lesson context, current code, output, and conversation as needed. Do not include confidential work or banking data. \(provider == .openAI ? "OpenAI calls request store: false; this does not override the provider's retention policies." : "\(provider.name)'s data retention policies apply.") Built-in lessons, hints, and tests remain available offline.").font(.caption).foregroundStyle(.secondary)
+                    SecureField(model.hasAPIKey ? "Replace saved \(provider.name) API key (optional)" : "\(provider.name) API key", text: $apiKey)
                     HStack {
-                        Label(model.hasAPIKey ? "A key is saved in macOS Keychain" : "No saved key detected", systemImage: model.hasAPIKey ? "key.fill" : "key")
+                        Label(model.hasAPIKey ? "A \(provider.name) key is saved in macOS Keychain" : "No saved \(provider.name) key detected", systemImage: model.hasAPIKey ? "key.fill" : "key")
                             .font(.caption).foregroundStyle(.secondary)
                         Spacer()
                         if model.hasAPIKey { Button("Remove key…", role: .destructive) { confirmRemove = true }.font(.caption) }
                     }
+                    Text("Create a key at \(provider.keyConsole). Each provider's key is stored separately.").font(.caption).foregroundStyle(.secondary)
                     TextField("Model", text: $modelName)
-                    Text("Use a model available to your API account that supports the Responses API and structured outputs. The default is gpt-4.1-mini; you can change it without rebuilding.").font(.caption).foregroundStyle(.secondary)
+                    Text("\(provider.modelGuidance) The default is \(provider.defaultModel); you can change it without rebuilding.").font(.caption).foregroundStyle(.secondary)
                     Stepper("Request limit per app launch: \(requestLimit)", value: $requestLimit, in: 1...100)
-                    Text("Used this launch: \(model.requestCount) requests · \(model.inputTokens) input tokens · \(model.outputTokens) output tokens reported. Failed or cancelled calls may still be billed. This is a request cap, not a dollar budget; configure billing limits in your OpenAI account. Counts reset when the app restarts.").font(.caption).foregroundStyle(.secondary)
+                    Text("Used this launch: \(model.requestCount) requests · \(model.inputTokens) input tokens · \(model.outputTokens) output tokens reported. Failed or cancelled calls may still be billed. This is a request cap, not a dollar budget; configure billing limits in your \(provider.name) account. Counts reset when the app restarts.").font(.caption).foregroundStyle(.secondary)
                 }
                 Section("Your learning data") {
                     Text("Drafts, attempts, generated exercises, and progress stay on this Mac. Backups contain your code and exercise reference solutions, but no API key.").font(.caption).foregroundStyle(.secondary)
@@ -67,7 +72,7 @@ struct SettingsView: View {
                 Text("Personal workspace · no app account").font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 Button("Save settings") {
-                    model.saveSettings(pythonPath: pythonPath, model: modelName, requestLimit: requestLimit, apiKey: apiKey)
+                    model.saveSettings(provider: provider, pythonPath: pythonPath, model: modelName, requestLimit: requestLimit, apiKey: apiKey)
                     apiKey = ""
                 }.buttonStyle(.borderedProminent).tint(.teal).keyboardShortcut(.defaultAction).disabled(model.isBusy || checking || pythonPath.isEmpty || modelName.isEmpty)
             }.padding(18)
@@ -75,12 +80,19 @@ struct SettingsView: View {
         .frame(width: 680, height: 760)
         .onAppear {
             pythonPath = model.progress.pythonPath
+            provider = model.progress.provider
             modelName = model.progress.model
             requestLimit = model.progress.sessionRequestLimit
-            model.checkKeyStatus()
+            model.checkKeyStatus(for: provider)
         }
-        .confirmationDialog("Remove the OpenAI key from macOS Keychain? Offline learning remains available.", isPresented: $confirmRemove) {
-            Button("Remove saved key", role: .destructive) { model.removeKey() }
+        .onChange(of: provider) { _, selected in
+            apiKey = ""
+            modelName = selected == model.progress.provider ? model.progress.model : selected.defaultModel
+            if selected != model.progress.provider { model.cloudConsent = false }
+            model.checkKeyStatus(for: selected)
+        }
+        .confirmationDialog("Remove the \(provider.name) key from macOS Keychain? Offline learning remains available.", isPresented: $confirmRemove) {
+            Button("Remove saved key", role: .destructive) { model.removeKey(for: provider) }
         }
     }
 

@@ -23,19 +23,19 @@ public enum TeacherError: LocalizedError {
 
     public var errorDescription: String? {
         switch self {
-        case .missingKey: return "Add your OpenAI API key in Settings to use the teacher. Built-in practice works offline."
-        case .invalidModel: return "Enter a valid OpenAI model identifier in Settings."
+        case .missingKey: return "Add an API key for the selected AI provider in Settings to use the teacher. Built-in practice works offline."
+        case .invalidModel: return "Enter a valid model identifier for the selected AI provider in Settings."
         case .contextTooLarge: return "The complete workspace is too large to send to the teacher (256 KB limit). No request was sent and your code was not shortened. Export a copy of your code, then shorten the draft and run it again before asking."
         case .http(let status):
             switch status {
-            case 401: return "OpenAI rejected the API key. Update it in Settings."
+            case 401: return "The AI provider rejected the API key. Update it in Settings."
             case 403: return "This API key does not have access to the requested model or service."
-            case 429: return "OpenAI's rate or account usage limit was reached. Check your API account or try later."
-            default: return "OpenAI request failed (HTTP \(status)). Check your model setting and try again later."
+            case 429: return "The AI provider's rate or account usage limit was reached. Check your API account or try later."
+            default: return "The AI provider request failed (HTTP \(status)). Check your API key and model setting, and try again later."
             }
         case .timedOut(let generation):
             return generation
-                ? "The connection timed out while waiting for OpenAI to finish the exercise, before Python validation. Your existing work is unchanged. Check your connection, or try narrower coverage or a faster model in Settings. No automatic retry was sent; the provider may still charge for the interrupted request."
+                ? "The connection timed out while waiting for the AI provider to finish the exercise, before Python validation. Your existing work is unchanged. Check your connection, or try narrower coverage or a faster model in Settings. No automatic retry was sent; the provider may still charge for the interrupted request."
                 : "The connection timed out while waiting for the teacher. Check your connection and try again when ready. No automatic retry was sent."
         case .incomplete: return "The teacher response was incomplete or declined. Try a shorter request."
         case .invalidResponse: return "The teacher returned an unreadable response. Your work is saved; please try again."
@@ -48,6 +48,7 @@ public enum TeacherError: LocalizedError {
 public struct TeacherClient: Sendable {
     private let apiKey: String
     private let model: String
+    public let provider: TeacherProvider
     private let session: URLSession
 
     private static let defaultSession = URLSession(configuration: sessionConfiguration())
@@ -60,9 +61,10 @@ public struct TeacherClient: Sendable {
         return configuration
     }
 
-    public init(apiKey: String, model: String, session: URLSession? = nil) {
+    public init(apiKey: String, model: String, provider: TeacherProvider = .openAI, session: URLSession? = nil) {
         self.apiKey = apiKey
         self.model = model
+        self.provider = provider
         self.session = session ?? Self.defaultSession
     }
 
@@ -77,7 +79,7 @@ public struct TeacherClient: Sendable {
         var input = history.suffix(8).map { ["role": $0.role == "assistant" ? "assistant" : "user", "content": String($0.text.prefix(3000))] }
         input.append(["role": "user", "content": "Current workspace snapshot (captured for this request; supersedes older conversation):\n\(context)"])
         input.append(["role": "user", "content": String(question.prefix(4000))])
-        return try await request(instructions: instructions + "\n" + awareness, input: input, format: nil, maxTokens: 1800)
+        return try await request(instructions: instructions + "\n" + awareness, input: input, schema: nil, maxTokens: 1800)
     }
 
     public static func validateContext(_ context: String) throws {
@@ -206,7 +208,7 @@ public struct TeacherClient: Sendable {
             guard data.count <= 120_000 else { throw TeacherError.invalidExercise }
             prompt += "\n\nRepair candidate (untrusted JSON):\n" + String(decoding: data, as: UTF8.self)
         }
-        let reply = try await request(instructions: instructions, input: [["role": "user", "content": prompt]], format: ["type": "json_schema", "name": "python_exercise", "strict": true, "schema": schema], maxTokens: options.scope == .selectedExercise ? 8000 : 12000, generation: true, onProgress: onProgress)
+        let reply = try await request(instructions: instructions, input: [["role": "user", "content": prompt]], schema: schema, maxTokens: options.scope == .selectedExercise ? 8000 : 12000, generation: true, onProgress: onProgress)
         var exercise = try Self.decodeExercise(reply.text, requiredCoverage: topics)
         exercise.effort = try ExperienceRules.generatedEffort(options: options, chapter: chapter, selectedExercise: selectedExercise, curriculum: curriculum)
         return (exercise, reply)
@@ -254,20 +256,12 @@ public struct TeacherClient: Sendable {
         return Exercise(id: "generated-\(UUID().uuidString)", title: value.title, instructions: value.instructionText(topics: requiredCoverage), starterCode: value.starterCode, referenceSolution: value.referenceSolution, testCode: value.testCode, hints: value.hints)
     }
 
-    private func request(instructions: String, input: [[String: String]], format: [String: Any]?, maxTokens: Int,
+    private func request(instructions: String, input: [[String: String]], schema: [String: Any]?, maxTokens: Int,
                          generation: Bool = false, onProgress: (@Sendable (Int) async -> Void)? = nil) async throws -> TeacherReply {
         guard !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw TeacherError.missingKey }
         guard !model.isEmpty, model.count <= 100, model.range(of: "^[a-zA-Z0-9._:-]+$", options: .regularExpression) != nil else { throw TeacherError.invalidModel }
-        var request = URLRequest(url: URL(string: "https://api.openai.com/v1/responses")!)
-        request.httpMethod = "POST"
+        var request = try makeRequest(instructions: instructions, input: input, schema: schema, maxTokens: maxTokens, stream: generation)
         request.timeoutInterval = generation ? 300 : 90
-        if generation { request.setValue("text/event-stream", forHTTPHeaderField: "Accept") }
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        var body: [String: Any] = ["model": model, "store": false, "instructions": instructions, "input": input, "max_output_tokens": maxTokens]
-        if let format { body["text"] = ["format": format] }
-        if generation { body["stream"] = true }
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
         do {
             if generation {
                 let (bytes, response) = try await session.bytes(for: request)
@@ -275,7 +269,7 @@ public struct TeacherClient: Sendable {
                 guard let response = response as? HTTPURLResponse else { throw TeacherError.invalidResponse }
                 guard (200..<300).contains(response.statusCode) else { throw TeacherError.http(response.statusCode) }
                 guard response.mimeType == "text/event-stream" else { throw TeacherError.invalidResponse }
-                var decoder = StreamDecoder()
+                var decoder = StreamDecoder(provider: provider)
                 var reportedCharacters = 0
                 for try await byte in bytes {
                     try Task.checkCancellation()
@@ -285,23 +279,102 @@ public struct TeacherClient: Sendable {
                         await onProgress?(reportedCharacters)
                     }
                 }
+                if let reply = decoder.finish() { return reply }
                 throw TeacherError.incomplete
             }
             let (data, response) = try await session.data(for: request)
             guard let response = response as? HTTPURLResponse else { throw TeacherError.invalidResponse }
             guard (200..<300).contains(response.statusCode) else { throw TeacherError.http(response.statusCode) }
-            return try Self.decodeReply(data)
+            return try Self.decodeReply(data, provider: provider)
         } catch let error as URLError where error.code == .timedOut {
             throw TeacherError.timedOut(generation: generation)
         }
     }
 
+    /// Builds the provider-specific request. Every provider receives the same instructions, input, and schema;
+    /// only the wire format and authentication header differ. The key is sent only in a header.
+    private func makeRequest(instructions: String, input: [[String: String]], schema: [String: Any]?, maxTokens: Int, stream: Bool) throws -> URLRequest {
+        var request = URLRequest(url: provider.endpoint)
+        request.httpMethod = "POST"
+        if stream { request.setValue("text/event-stream", forHTTPHeaderField: "Accept") }
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let tokens = maxTokens + provider.reasoningAllowance
+        var body: [String: Any] = ["model": model]
+        switch provider {
+        case .openAI:
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+            body["store"] = false
+            body["instructions"] = instructions
+            body["input"] = input
+            body["max_output_tokens"] = tokens
+            if let schema { body["text"] = ["format": ["type": "json_schema", "name": "python_exercise", "strict": true, "schema": schema]] }
+        case .anthropic:
+            request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+            request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+            body["system"] = instructions
+            body["messages"] = Self.alternatingMessages(input)
+            body["max_tokens"] = tokens
+            if let schema { body["output_config"] = ["format": ["type": "json_schema", "schema": schema]] }
+        case .google, .xAI:
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+            body["messages"] = [["role": "system", "content": instructions]] + input
+            body["max_tokens"] = tokens
+            if let schema { body["response_format"] = ["type": "json_schema", "json_schema": ["name": "python_exercise", "strict": true, "schema": schema]] }
+            if stream { body["stream_options"] = ["include_usage": true] }
+        }
+        if stream { body["stream"] = true }
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        return request
+    }
+
+    /// Anthropic requires the conversation to start with a user turn; consecutive turns with the same role are merged.
+    static func alternatingMessages(_ input: [[String: String]]) -> [[String: String]] {
+        var messages: [[String: String]] = []
+        for message in input {
+            let role = message["role"] == "assistant" ? "assistant" : "user"
+            let content = message["content"] ?? ""
+            if messages.isEmpty && role == "assistant" { messages.append(["role": "user", "content": "(Earlier conversation follows.)"]) }
+            if messages.last?["role"] == role {
+                messages[messages.count - 1]["content", default: ""] += "\n\n" + content
+            } else {
+                messages.append(["role": role, "content": content])
+            }
+        }
+        return messages
+    }
+
     struct StreamDecoder {
+        let provider: TeacherProvider
         private var line = Data()
         private var eventLines: [String] = []
         private var eventBytes = 0
         private var totalBytes = 0
         private(set) var receivedCharacters = 0
+        private var text = ""
+        private var stoppedNormally = false
+        private var inputTokens = 0
+        private var outputTokens = 0
+
+        init(provider: TeacherProvider = .openAI) {
+            self.provider = provider
+        }
+
+        /// Chat Completions streams may close after the final chunk without a [DONE] marker;
+        /// only a stream whose finish reason was a normal stop is accepted.
+        func finish() -> TeacherReply? {
+            provider == .google || provider == .xAI ? completedReply() : nil
+        }
+
+        private func completedReply() -> TeacherReply? {
+            guard stoppedNormally, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+            return TeacherReply(text: text, inputTokens: inputTokens, outputTokens: outputTokens)
+        }
+
+        private mutating func receive(_ delta: String, keep: Bool = true) throws {
+            receivedCharacters += delta.count
+            guard receivedCharacters <= 80_000 else { throw TeacherError.invalidExercise }
+            if keep { text += delta }
+        }
 
         mutating func append(_ byte: UInt8) throws -> TeacherReply? {
             totalBytes += 1
@@ -320,24 +393,143 @@ public struct TeacherClient: Sendable {
                 let data = Data(eventLines.joined(separator: "\n").utf8)
                 eventLines.removeAll(keepingCapacity: true)
                 eventBytes = 0
-                guard String(data: data, encoding: .utf8) != "[DONE]" else { throw TeacherError.incomplete }
-                guard let event = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                      let type = event["type"] as? String else { throw TeacherError.invalidResponse }
-                switch type {
-                case "response.completed":
-                    guard let response = event["response"] as? [String: Any] else { throw TeacherError.invalidResponse }
-                    return try TeacherClient.decodeReply(JSONSerialization.data(withJSONObject: response))
-                case "response.output_text.delta":
-                    guard let delta = event["delta"] as? String else { throw TeacherError.invalidResponse }
-                    receivedCharacters += delta.count
-                    guard receivedCharacters <= 80_000 else { throw TeacherError.invalidExercise }
-                case "response.incomplete", "response.failed", "response.refusal.delta", "response.refusal.done", "error":
-                    throw TeacherError.incomplete
-                default: break
+                if String(data: data, encoding: .utf8) == "[DONE]" {
+                    guard let reply = finish() else { throw TeacherError.incomplete }
+                    return reply
+                }
+                guard let event = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw TeacherError.invalidResponse }
+                switch provider {
+                case .openAI: return try openAIEvent(event)
+                case .anthropic: return try anthropicEvent(event)
+                case .google, .xAI: try chatCompletionEvent(event)
                 }
             }
             return nil
         }
+
+        private mutating func openAIEvent(_ event: [String: Any]) throws -> TeacherReply? {
+            guard let type = event["type"] as? String else { throw TeacherError.invalidResponse }
+            switch type {
+            case "response.completed":
+                guard let response = event["response"] as? [String: Any] else { throw TeacherError.invalidResponse }
+                return try TeacherClient.decodeReply(JSONSerialization.data(withJSONObject: response))
+            case "response.output_text.delta":
+                guard let delta = event["delta"] as? String else { throw TeacherError.invalidResponse }
+                try receive(delta, keep: false)
+            case "response.incomplete", "response.failed", "response.refusal.delta", "response.refusal.done", "error":
+                throw TeacherError.incomplete
+            default: break
+            }
+            return nil
+        }
+
+        private mutating func anthropicEvent(_ event: [String: Any]) throws -> TeacherReply? {
+            guard let type = event["type"] as? String else { throw TeacherError.invalidResponse }
+            switch type {
+            case "message_start":
+                let usage = (event["message"] as? [String: Any])?["usage"] as? [String: Any]
+                inputTokens = usage?["input_tokens"] as? Int ?? 0
+            case "content_block_delta":
+                guard let delta = event["delta"] as? [String: Any] else { throw TeacherError.invalidResponse }
+                if delta["type"] as? String == "text_delta" {
+                    guard let text = delta["text"] as? String else { throw TeacherError.invalidResponse }
+                    try receive(text)
+                }
+            case "message_delta":
+                if let reason = (event["delta"] as? [String: Any])?["stop_reason"] as? String {
+                    guard reason == "end_turn" else { throw TeacherError.incomplete }
+                    stoppedNormally = true
+                }
+                let usage = event["usage"] as? [String: Any]
+                outputTokens = usage?["output_tokens"] as? Int ?? outputTokens
+                inputTokens = max(inputTokens, usage?["input_tokens"] as? Int ?? 0)
+            case "message_stop":
+                guard let reply = completedReply() else { throw TeacherError.incomplete }
+                return reply
+            case "error":
+                throw TeacherError.incomplete
+            default: break
+            }
+            return nil
+        }
+
+        private mutating func chatCompletionEvent(_ event: [String: Any]) throws {
+            guard event["error"] == nil else { throw TeacherError.incomplete }
+            let usage = event["usage"] as? [String: Any]
+            guard let choices = event["choices"] as? [[String: Any]] else {
+                guard usage != nil else { throw TeacherError.invalidResponse }
+                return updateUsage(usage)
+            }
+            updateUsage(usage)
+            for choice in choices {
+                let delta = choice["delta"] as? [String: Any]
+                if let refusal = delta?["refusal"] as? String, !refusal.isEmpty { throw TeacherError.incomplete }
+                if let content = delta?["content"] as? String { try receive(content) }
+                if let reason = choice["finish_reason"] as? String {
+                    guard reason == "stop" else { throw TeacherError.incomplete }
+                    stoppedNormally = true
+                }
+            }
+        }
+
+        private mutating func updateUsage(_ usage: [String: Any]?) {
+            inputTokens = usage?["prompt_tokens"] as? Int ?? inputTokens
+            outputTokens = usage?["completion_tokens"] as? Int ?? outputTokens
+        }
+    }
+
+    static func decodeReply(_ data: Data, provider: TeacherProvider) throws -> TeacherReply {
+        switch provider {
+        case .openAI: return try decodeReply(data)
+        case .anthropic: return try decodeAnthropicReply(data)
+        case .google, .xAI: return try decodeChatCompletionReply(data)
+        }
+    }
+
+    static func decodeAnthropicReply(_ data: Data) throws -> TeacherReply {
+        struct Response: Decodable {
+            struct Block: Decodable {
+                let type: String
+                let text: String?
+            }
+            struct Usage: Decodable {
+                let input_tokens: Int
+                let output_tokens: Int
+            }
+            let content: [Block]
+            let stop_reason: String?
+            let usage: Usage?
+        }
+        guard data.count <= 1_000_000, let response = try? JSONDecoder().decode(Response.self, from: data) else { throw TeacherError.invalidResponse }
+        guard response.stop_reason == "end_turn" else { throw TeacherError.incomplete }
+        let text = response.content.filter { $0.type == "text" }.compactMap(\.text).joined()
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw TeacherError.invalidResponse }
+        return TeacherReply(text: text, inputTokens: response.usage?.input_tokens ?? 0, outputTokens: response.usage?.output_tokens ?? 0)
+    }
+
+    static func decodeChatCompletionReply(_ data: Data) throws -> TeacherReply {
+        struct Response: Decodable {
+            struct Choice: Decodable {
+                struct Message: Decodable {
+                    let content: String?
+                    let refusal: String?
+                }
+                let message: Message
+                let finish_reason: String?
+            }
+            struct Usage: Decodable {
+                let prompt_tokens: Int
+                let completion_tokens: Int
+            }
+            let choices: [Choice]
+            let usage: Usage?
+        }
+        guard data.count <= 1_000_000, let response = try? JSONDecoder().decode(Response.self, from: data),
+              let choice = response.choices.first else { throw TeacherError.invalidResponse }
+        guard choice.finish_reason == "stop", (choice.message.refusal ?? "").isEmpty else { throw TeacherError.incomplete }
+        let text = choice.message.content ?? ""
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw TeacherError.invalidResponse }
+        return TeacherReply(text: text, inputTokens: response.usage?.prompt_tokens ?? 0, outputTokens: response.usage?.completion_tokens ?? 0)
     }
 
     public static func decodeReply(_ data: Data) throws -> TeacherReply {
