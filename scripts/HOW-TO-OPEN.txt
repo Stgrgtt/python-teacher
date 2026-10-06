@@ -1,0 +1,27 @@
+Python Teacher - how to open
+
+This app is not signed with an Apple Developer ID, so macOS blocks it the
+first time. This is expected. You only need to do this once.
+
+Requirements
+- macOS 14 (Sonoma) or later, on an Apple Silicon or Intel Mac.
+- Python 3 installed, for example from https://www.python.org/downloads/macos/
+  or with Homebrew: brew install python
+
+Steps
+1. Unzip the file and drag "Python Teacher.app" into your Applications folder.
+2. Double-click it. macOS says it cannot verify the app. Click "Done" (or "Cancel").
+3. Open System Settings > Privacy & Security, scroll down to the
+   "Python Teacher was blocked" message, and click "Open Anyway".
+4. Confirm with your password or Touch ID, then click "Open Anyway" again.
+
+Alternative (Terminal), after moving the app to Applications:
+
+    xattr -dr com.apple.quarantine "/Applications/Python Teacher.app"
+
+Then open the app normally.
+
+First launch
+- Open Settings (Command+,), check the Python interpreter, and click
+  "Verify restricted execution".
+- The course works offline. An OpenAI API key is optional.
