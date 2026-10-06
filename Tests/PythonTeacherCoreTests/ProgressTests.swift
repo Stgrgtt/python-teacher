@@ -543,6 +543,7 @@ final class ProgressTests: XCTestCase {
         state.quizAnswers = ["collections": ["collections-q1": 0, "collections-q3": 2]]
         state.reflections = ["collections": "Parse text before looking up keys."]
         state.pythonPath = "/opt/homebrew/bin/python3"
+        state.provider = .anthropic
         state.model = "test-model"
         state.sessionRequestLimit = 7
         state.teacherConversations = ["values:practice:values-label": [
@@ -565,6 +566,7 @@ final class ProgressTests: XCTestCase {
         XCTAssertEqual(loaded.quizAnswers, state.quizAnswers)
         XCTAssertEqual(loaded.reflections, state.reflections)
         XCTAssertEqual(loaded.pythonPath, state.pythonPath)
+        XCTAssertEqual(loaded.provider, .anthropic)
         XCTAssertEqual(loaded.model, state.model)
         XCTAssertEqual(loaded.sessionRequestLimit, state.sessionRequestLimit)
         XCTAssertEqual(loaded.teacherConversations, state.teacherConversations)
@@ -589,6 +591,21 @@ final class ProgressTests: XCTestCase {
         XCTAssertEqual(exported.generatedExercises, state.generatedExercises)
         XCTAssertEqual(exported.attempts.map(\.id), state.attempts.map(\.id))
         XCTAssertEqual(exported.masteredChapterIDs, ["values"])
+    }
+
+    func testLegacyProgressWithoutProviderKeepsOpenAIAndSavedModel() throws {
+        var state = ProgressState()
+        state.model = "gpt-legacy-choice"
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(state)) as? [String: Any])
+        XCTAssertEqual(json["provider"] as? String, "openai")
+        json.removeValue(forKey: "provider")
+        try install(JSONSerialization.data(withJSONObject: json))
+        let loaded = try store.load()
+        XCTAssertEqual(loaded.provider, .openAI)
+        XCTAssertEqual(loaded.model, "gpt-legacy-choice")
+        json["provider"] = "unknown-provider"
+        try install(JSONSerialization.data(withJSONObject: json))
+        XCTAssertThrowsError(try store.load(), "an unrecognized provider is preserved as unreadable, not replaced")
     }
 
     func testLegacyProgressWithoutConversationsLoadsAndCanBeSaved() throws {

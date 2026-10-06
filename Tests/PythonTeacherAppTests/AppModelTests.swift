@@ -82,6 +82,13 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(try legacy.load(), "synthetic-stale-value")
     }
 
+    func testEachProviderHasItsOwnKeychainItemAndOpenAIKeepsItsService() {
+        XCTAssertEqual(KeychainStore.provider(.openAI).service, KeychainStore().service)
+        let services = TeacherProvider.allCases.map { KeychainStore.provider($0).service }
+        XCTAssertEqual(Set(services).count, TeacherProvider.allCases.count)
+        XCTAssertTrue(services.allSatisfy { $0.hasPrefix("local.pythonteacher.") })
+    }
+
     @MainActor
     func testLegacyFoundationDraftsRelaunchWithOriginalRequirementsAndEvidence() async throws {
         let fixtures: [(String, String, LearningMode, String)] = [

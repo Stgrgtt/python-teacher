@@ -12,7 +12,20 @@ A launchable Mac application with a native code editor, a reviewed foundational 
 
 **Latest integrated verification — 2026-10-05:** Full `swift test` after the saved-draft compatibility fix: **226 tests, 219 passed**; the same seven documented editor-layout tests failed with 18 assertions. All **156 core tests** passed. Curriculum suite with Homebrew Python 3.14: **47 passed, zero failures**. No live API or hands-on packaged-app verification was performed. Release packaging/signature evidence is recorded below.
 
-**Current revision — whole-chapter generation adjusted to the expanded curriculum, 2026-10-05, branch `ai-projects`:** a review of all 17 chapters found five problems:
+**Current revision — multiple AI providers, 2026-10-06, branch `feature/multi-provider-teacher`:** the teacher and generator now work with OpenAI, Anthropic, Google (Gemini) or xAI (Grok), chosen in Settings.
+- `TeacherProvider` (Core) defines each provider's name, default model, endpoint and key console. `ProgressState.provider` is saved next to `model`. Older progress files without the field decode as OpenAI and keep their model. An unrecognized value is treated as unreadable and preserved.
+- `TeacherClient(apiKey:model:provider:session:)` sends identical instructions, snapshot, prompt and JSON schema to every provider. The wire formats are:
+  - OpenAI: Responses API, unchanged, still with `store: false`.
+  - Anthropic: Messages API with an `x-api-key` header, `output_config.format` structured outputs, user-first merged turns, and SSE `message_*`/`content_block_delta` events. Only an `end_turn` stop is accepted.
+  - Google and xAI: OpenAI-compatible Chat Completions with `response_format: json_schema` and `stream_options.include_usage`. Only a `stop` finish reason is accepted, at `[DONE]` or at stream close.
+- Non-OpenAI providers get 8,000 extra output tokens because their default models reason. Truncation, refusals, error events and missing completion are rejected for every provider, just as for OpenAI.
+- Each provider has its own Keychain item (`local.pythonteacher.<provider>`). The OpenAI item keeps its original service name, so existing keys keep working.
+- Picking a different provider in Settings clears cloud consent until the learner enables it again for that provider. UI text and errors name the selected provider or stay provider-neutral.
+- Verification: targeted `TeacherClientTests|ProgressTests` plus the Keychain-service test passed, **88/88**. Full `swift test` ran **255 tests**, with 18 failures. All 18 are the seven documented editor-layout tests, and the same seven fail on the baseline without these changes.
+- New mocked tests cover request shape, headers, streaming, usage and rejection paths for each provider, plus legacy progress decoding.
+- **Live API calls to any provider, including whether Gemini's compatibility layer and Anthropic accept the strict exercise schema, are unverified.** The Settings picker has not been exercised by hand.
+
+**Previous revision — whole-chapter generation adjusted to the expanded curriculum, 2026-10-05, branch `ai-projects`:** a review of all 17 chapters found five problems:
 - Every heading was mandatory coverage, including orientation openers and "Common mistakes" lists.
 - Prerequisite knowledge was named only by chapter title.
 - The generator didn't know the testing chapter's mutation-checking pattern.

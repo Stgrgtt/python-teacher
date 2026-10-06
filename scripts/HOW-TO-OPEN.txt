@@ -24,4 +24,5 @@ Then open the app normally.
 First launch
 - Open Settings (Command+,), check the Python interpreter, and click
   "Verify restricted execution".
-- The course works offline. An OpenAI API key is optional.
+- The course works offline. An API key from OpenAI, Anthropic, Google or
+  xAI is optional; choose the provider in Settings.
