@@ -7,13 +7,29 @@ extension Curriculum {
         lesson: """
         # Build new classes from existing ones
 
-        In the classes chapter you wrote each class from scratch. Real programs often contain several classes that share most of their behaviour: a chat model card and an image model card both have a name and a version; a flat price plan and a metered price plan both have a monthly fee. Copying the same methods into every class makes code long, and a later fix must be repeated everywhere. **Inheritance** lets a new class start with everything another class already has and then add or change only the parts that differ.
+        In the classes chapter you wrote each class from scratch. Real programs often contain several classes that share most of their behaviour:
 
-        Some vocabulary first. The existing class is called the **parent class** (also *base class* or *superclass*). The new class is the **child class** or **subclass**. You have already seen the syntax once: a custom exception such as `class BudgetError(Exception)` is a subclass of Python's `Exception`. This chapter explains what that parenthesised name really does and how to design your own families of classes.
+        - a chat model card and an image model card both have a name and a version;
+        - a flat price plan and a metered price plan both have a monthly fee.
+
+        Copying the same methods into every class makes code long, and a later fix must be repeated everywhere.
+
+        > **Key idea:** **Inheritance** lets a new class start with everything another class already has, and then add or change only the parts that differ.
+
+        ### Some vocabulary
+
+        - The existing class is called the **parent class** (also *base class* or *superclass*).
+        - The new class is the **child class** or **subclass**.
+
+        You have already seen the syntax once: a custom exception such as `class BudgetError(Exception)` is a subclass of Python's `Exception`.
+
+        This chapter explains what that parenthesised name really does and how to design your own families of classes.
 
         ## Make a subclass
 
-        Write the parent's name in parentheses after the new class name. The child **inherits** the parent's methods: an instance of the child can call them as if they were written in the child.
+        To make a subclass, write the parent's name in parentheses after the new class name.
+
+        The child **inherits** the parent's methods: an instance of the child can call them as if they were written in the child.
 
         ```python
         class Device:
@@ -35,17 +51,46 @@ extension Curriculum {
         assert box.name == "kitchen"
         ```
 
-        This displays `device kitchen`, then `kitchen speaker`. `Speaker` defines no `__init__`, so `Speaker("kitchen")` uses the parent's `__init__`, which saves `self.name`. When you call `box.describe()`, Python first looks for `describe` in `Speaker`; it is not there, so Python looks in the parent `Device` and uses that method. This search from child to parent is called **method lookup**.
+        ```text
+        device kitchen
+        kitchen speaker
+        ```
 
-        Inheritance only flows downward. A plain `Device("plug")` has no `speaker_label` method; calling it raises `AttributeError`. Read a subclass as an **is-a** relationship: every speaker *is a* device, but not every device is a speaker.
+        Here is what happened:
 
-        Sometimes a subclass adds nothing yet. Python requires an indented body after the colon, so write `pass`, a statement that does nothing: `class Lamp(Device):` followed by an indented `pass` line creates a subclass that behaves exactly like `Device`.
+        - `Speaker` defines no `__init__`, so `Speaker("kitchen")` uses the parent's `__init__`, which saves `self.name`.
+        - When you call `box.describe()`, Python first looks for `describe` in `Speaker`. It is not there, so Python looks in the parent `Device` and uses that method.
+
+        This search from child to parent is called **method lookup**.
+
+        ### Inheritance only flows downward
+
+        A plain `Device("plug")` has no `speaker_label` method; calling it raises `AttributeError`.
+
+        > **Tip:** Read a subclass as an **is-a** relationship: every speaker *is a* device, but not every device is a speaker.
+
+        ### A subclass that adds nothing yet
+
+        Sometimes a subclass adds nothing yet. Python requires an indented body after the colon, so write `pass`, a statement that does nothing.
+
+        For example, `class Lamp(Device):` followed by an indented `pass` line creates a subclass that behaves exactly like `Device`.
 
         ## Override methods and call the parent with super()
 
-        A child **overrides** a method by defining a method with the same name. Method lookup finds the child's version first, so it wins for child instances; parent instances keep using the parent's version. Often you do not want to replace the parent's work completely, only to extend it. `super()` gives you access to the parent's version of a method from inside the child: `super().describe()` runs `Device.describe` on the current object.
+        A child **overrides** a method by defining a method with the same name.
 
-        The most common use is `__init__`. A child that needs extra attributes defines its own `__init__`, calls `super().__init__(...)` with the arguments the parent expects, and then saves its own attributes.
+        - Method lookup finds the child's version first, so it wins for child instances.
+        - Parent instances keep using the parent's version.
+
+        Often you do not want to replace the parent's work completely, only to extend it. `super()` gives you access to the parent's version of a method from inside the child: `super().describe()` runs `Device.describe` on the current object.
+
+        ### Extending `__init__`
+
+        The most common use is `__init__`. A child that needs extra attributes:
+
+        1. defines its own `__init__`;
+        2. calls `super().__init__(...)` with the arguments the parent expects;
+        3. then saves its own attributes.
 
         ```python
         class Device:
@@ -72,9 +117,20 @@ extension Curriculum {
         print(Device("plug").describe())
         ```
 
-        This displays `hall`, `device hall set to 21C`, and `device plug`. Notice that you do not pass `self` to `super().__init__(name)`; Python supplies it, just like an ordinary method call. Because the child reuses the parent's text through `super().describe()`, a later change to the parent's format automatically appears in the child too.
+        ```text
+        hall
+        device hall set to 21C
+        device plug
+        ```
 
-        Overriding also affects parent methods that call other methods through `self`. `self` is always the actual object, so a parent method that calls `self.title()` uses the child's `title` when the object is a child instance:
+        - You do not pass `self` to `super().__init__(name)`. Python supplies it, just like an ordinary method call.
+        - Because the child reuses the parent's text through `super().describe()`, a later change to the parent's format automatically appears in the child too.
+
+        ### Overrides reach parent methods that use self
+
+        Overriding also affects parent methods that call other methods through `self`.
+
+        `self` is always the actual object, so a parent method that calls `self.title()` uses the child's `title` when the object is a child instance:
 
         ```python
         class Report:
@@ -98,7 +154,13 @@ extension Curriculum {
 
         ## isinstance with class hierarchies
 
-        A **class hierarchy** is a family of classes connected by inheritance. You met `isinstance(value, str)` in the reliability chapter. With your own classes, `isinstance(obj, SomeClass)` is True when `obj` was created from `SomeClass` *or from any subclass of it*. `type(obj) is SomeClass` is stricter: it is True only for the exact class. `issubclass(Child, Parent)` asks the same question about two classes rather than an object.
+        A **class hierarchy** is a family of classes connected by inheritance.
+
+        You met `isinstance(value, str)` in the reliability chapter. With your own classes, three related checks are useful:
+
+        - `isinstance(obj, SomeClass)` is `True` when `obj` was created from `SomeClass` *or from any subclass of it*.
+        - `type(obj) is SomeClass` is stricter: it is `True` only for the exact class.
+        - `issubclass(Child, Parent)` asks the same question about two classes rather than an object.
 
         ```python
         class Device:
@@ -138,13 +200,28 @@ extension Curriculum {
         print(kind(Device("plug")))
         ```
 
-        This displays `smart speaker`, `speaker`, and `device`. Check the **most specific** class first: if `kind` tested `Device` first, every object would match it and the other branches would never run.
+        ```text
+        smart speaker
+        speaker
+        device
+        ```
 
-        `TypeError` is Python's standard exception for "this value has the wrong type". You raise it exactly like `ValueError`: `raise TypeError("message")`. Use `isinstance` with a parent class when any member of the family is acceptable; for example, a function that needs *some* kind of device should accept speakers and thermostats too.
+        > **Watch out:** Check the **most specific** class first. If `kind` tested `Device` first, every object would match it and the other branches would never run.
+
+        ### Raising TypeError
+
+        `TypeError` is Python's standard exception for "this value has the wrong type". You raise it exactly like `ValueError`: `raise TypeError("message")`.
+
+        Use `isinstance` with a parent class when any member of the family is acceptable. For example, a function that needs *some* kind of device should accept speakers and thermostats too.
 
         ## Computed attributes with @property
 
-        A line starting with `@` directly above a `def` is a **decorator**: it changes how the definition below it behaves. You may have seen `@dataclass` above a class. `@property` turns a method into a **property**: you read it like an attribute, *without parentheses*, but Python runs the method each time, so the value is always computed from the current attributes.
+        A line starting with `@` directly above a `def` is a **decorator**: it changes how the definition below it behaves. You may have seen `@dataclass` above a class.
+
+        `@property` turns a method into a **property**:
+
+        - you read it like an attribute, *without parentheses*;
+        - Python runs the method each time, so the value is always computed from the current attributes.
 
         ```python
         class Rectangle:
@@ -178,15 +255,39 @@ extension Curriculum {
             print("area is read-only")
         ```
 
-        This displays 10, 13, 12, and `area is read-only`. After `plot.width` changed, `plot.area` updated by itself because it is recomputed on every read; a value saved once in `__init__` would have gone stale. A subclass can override a property by defining a property with the same name, and `super().area` (again without parentheses) reads the parent's version. A property defined this way cannot be assigned to: the assignment raises `AttributeError`.
+        ```text
+        10
+        13
+        12
+        area is read-only
+        ```
 
-        Two typical mistakes: writing `plot.area()` calls the number that the property returned and fails with `TypeError: 'int' object is not callable`; forgetting the `@property` line makes `plot.area` give you the method itself (displayed as something like `<bound method ...>`) instead of a number.
+        - After `plot.width` changed, `plot.area` updated by itself because it is recomputed on every read. A value saved once in `__init__` would have gone stale.
+        - A subclass can override a property by defining a property with the same name.
+        - `super().area` (again without parentheses) reads the parent's version.
+        - A property defined this way cannot be assigned to: the assignment raises `AttributeError`.
+
+        ### Two typical mistakes
+
+        - Writing `plot.area()` calls the number that the property returned and fails with `TypeError: 'int' object is not callable`.
+        - Forgetting the `@property` line makes `plot.area` give you the method itself (displayed as something like `<bound method ...>`) instead of a number.
 
         ## Abstract base classes with abc
 
-        Sometimes a parent class is only a template: every scorer must have a `score` method, but there is no sensible "general" scorer. The standard library module `abc` (abstract base classes) expresses this. `from abc import ABC, abstractmethod` is a form of import that makes the two names `ABC` and `abstractmethod` available directly, so you can write `ABC` instead of `abc.ABC`.
+        Sometimes a parent class is only a template: every scorer must have a `score` method, but there is no sensible "general" scorer.
 
-        A class that inherits from `ABC` and marks a method with `@abstractmethod` is **abstract**: Python refuses to create instances of it, raising `TypeError`. A subclass becomes **concrete** (creatable) only after it overrides every abstract method. The abstract method's body is usually just `pass`, because it is never meant to run. Ordinary methods in the abstract class may call the abstract ones; they will use the subclass's implementation.
+        The standard library module `abc` (abstract base classes) expresses this.
+
+        ### Importing the two names
+
+        `from abc import ABC, abstractmethod` is a form of import that makes the two names `ABC` and `abstractmethod` available directly, so you can write `ABC` instead of `abc.ABC`.
+
+        ### Abstract and concrete classes
+
+        - A class that inherits from `ABC` and marks a method with `@abstractmethod` is **abstract**: Python refuses to create instances of it, raising `TypeError`.
+        - A subclass becomes **concrete** (creatable) only after it overrides every abstract method.
+        - The abstract method's body is usually just `pass`, because it is never meant to run.
+        - Ordinary methods in the abstract class may call the abstract ones; they will use the subclass's implementation.
 
         ```python
         from abc import ABC, abstractmethod
@@ -225,11 +326,19 @@ extension Curriculum {
         assert isinstance(Square(2), Shape)
         ```
 
-        This displays `area 9`, `Shape is abstract`, and `Unfinished still has an abstract method`. The error appears when you try to *create* the object, so a forgotten method is caught early instead of failing later in the middle of a calculation.
+        ```text
+        area 9
+        Shape is abstract
+        Unfinished still has an abstract method
+        ```
+
+        > **Key idea:** The error appears when you try to *create* the object, so a forgotten method is caught early instead of failing later in the middle of a calculation.
 
         ## Choose composition or inheritance
 
-        Inheritance models **is-a**. Many relationships are really **has-a**: a car *has an* engine; an evaluator *has a* scorer. For these, use **composition**: store the other object in an attribute and call its methods. Passing a call on to a stored object like this is called **delegation**.
+        Inheritance models **is-a**. Many relationships are really **has-a**: a car *has an* engine; an evaluator *has a* scorer.
+
+        For these, use **composition**: store the other object in an attribute and call its methods. Passing a call on to a stored object like this is called **delegation**.
 
         ```python
         class Engine:
@@ -258,29 +367,52 @@ extension Curriculum {
         print(Car("city", ElectricMotor()).start())
         ```
 
-        This displays `hatch: engine 90hp running` and `city: motor humming`. `Car` does not inherit from `Engine`; it works with any part that has a `start` method, and you can swap the part without writing a new car class. A rule of thumb: use inheritance when the child truly is a special kind of the parent and should be usable anywhere the parent is; use composition when one object merely uses another. Composition and abstract classes combine well: an object can store "any `Shape`" and check it with `isinstance(part, Shape)`.
+        ```text
+        hatch: engine 90hp running
+        city: motor humming
+        ```
 
-        **Common mistakes and debugging.** If a child instance is missing an attribute the parent should set (`AttributeError: ... has no attribute 'name'`), the child's `__init__` probably forgot `super().__init__(...)`. If an override seems ignored, check that the method name is spelled exactly like the parent's. If your new method calls itself instead of the parent (endless recursion, `RecursionError`), you wrote `self.describe()` where you meant `super().describe()`. To see which class an object really came from, display `type(obj).__name__`.
+        `Car` does not inherit from `Engine`. It works with any part that has a `start` method, and you can swap the part without writing a new car class.
+
+        > **Tip:** As a rule of thumb, use inheritance when the child truly is a special kind of the parent and should be usable anywhere the parent is. Use composition when one object merely uses another.
+
+        Composition and abstract classes combine well: an object can store "any `Shape`" and check it with `isinstance(part, Shape)`.
+
+        ### Common mistakes and debugging
+
+        - **Missing attribute.** If a child instance is missing an attribute the parent should set (`AttributeError: ... has no attribute 'name'`), the child's `__init__` probably forgot `super().__init__(...)`.
+        - **Override ignored.** If an override seems ignored, check that the method name is spelled exactly like the parent's.
+        - **Endless recursion.** If your new method calls itself instead of the parent (`RecursionError`), you wrote `self.describe()` where you meant `super().describe()`.
+        - **Unsure of the class.** To see which class an object really came from, display `type(obj).__name__`.
         """,
         exercises: [
             exercise("inheritance-chat-card", "Extend a model card with a subclass", """
             Goal:
-            Create a specialised model card by inheriting from a general one, reusing the parent's setup and label with super().
+            Create a specialised model card by inheriting from a general one, reusing the parent's setup and label with `super()`.
 
             Starting code:
-            class ModelCard is complete: __init__(self, name, version) saves name and version, label() returns text such as 'orbit v2', and is_ready() returns True when version is at least 1. Do not change ModelCard. class ChatModelCard(ModelCard) is the subclass you complete: its __init__ only saves the placeholder self.context_window = 0, and its label() returns the placeholder ''.
+            - `class ModelCard` is complete. Do not change it.
+            - `ModelCard.__init__(self, name, version)` saves `name` and `version`.
+            - `ModelCard.label()` returns text such as `'orbit v2'`.
+            - `ModelCard.is_ready()` returns `True` when `version` is at least `1`.
+            - `class ChatModelCard(ModelCard)` is the subclass you complete. Its `__init__` only saves the placeholder `self.context_window = 0`, and its `label()` returns the placeholder `''`. Replace both placeholders.
 
             Your task:
-            1. In ChatModelCard.__init__(self, name, version, context_window), first call super().__init__(name, version) so the parent saves name and version.
-            2. Then save the context_window argument as self.context_window (replace the 0 placeholder).
-            3. Override label(self) so it returns the parent's label, one space, and the context window in parentheses followed by ' tokens'. Build it by calling super().label(), not by rewriting the parent's format, so that a change to ModelCard.label also changes the child's label.
-            4. Do not define is_ready in ChatModelCard: it must be inherited unchanged.
+            1. In `ChatModelCard.__init__(self, name, version, context_window)`, first call `super().__init__(name, version)` so the parent saves `name` and `version`.
+            2. Then save the `context_window` argument as `self.context_window` (replace the `0` placeholder).
+            3. Override `label(self)` so it returns the parent's label, one space, and then the context window in parentheses followed by `' tokens'`, for example `'orbit v2 (4096 tokens)'`.
+            4. Build that label by calling `super().label()`, not by rewriting the parent's format, so that a change to `ModelCard.label` also changes the child's label.
+            5. Do not define `is_ready` in `ChatModelCard`: it must be inherited unchanged.
 
             Expected result:
-            ChatModelCard('orbit', 2, 4096).label() returns 'orbit v2 (4096 tokens)'. The same card has name 'orbit', version 2, context_window 4096, is_ready() True, and isinstance(card, ModelCard) is True. ChatModelCard('draft', 0, 512).label() returns 'draft v0 (512 tokens)' and its is_ready() is False. ModelCard('base', 3).label() is still 'base v3'.
+            - `ChatModelCard('orbit', 2, 4096).label()` returns `'orbit v2 (4096 tokens)'`.
+            - That same card has `name` `'orbit'`, `version` `2` and `context_window` `4096`, and its `is_ready()` returns `True`.
+            - `isinstance(card, ModelCard)` is `True`.
+            - `ChatModelCard('draft', 0, 512).label()` returns `'draft v0 (512 tokens)'`, and its `is_ready()` returns `False`.
+            - `ModelCard('base', 3).label()` is still `'base v3'`.
 
             Check:
-            Choose Check solution. The checks create cards, temporarily change ModelCard's label and __init__ to confirm your subclass calls them through super(), and confirm is_ready is inherited rather than redefined.
+            Choose **Check solution**. The checks create cards, temporarily change `ModelCard`'s `label` and `__init__` to confirm your subclass calls them through `super()`, and confirm `is_ready` is inherited rather than redefined.
             """, """
             class ModelCard:
                 def __init__(self, name, version):
@@ -345,28 +477,40 @@ extension Curriculum {
             ModelCard.__init__ = original_init
             assert getattr(tracked, "parent_setup_ran", False), "Call super().__init__(name, version)."
             """, [
-                "A subclass already has every parent method. Your job is only to add the extra attribute and adjust the label; keep is_ready out of the child.",
-                "Inside the child's __init__, the parent's setup runs when you call it through super() with the two arguments the parent expects; then save the third argument on self.",
-                "In the overriding label, save the result of super().label() in a variable (or use it directly inside an f-string) and add a space, an opening parenthesis, the context window, ' tokens' and a closing parenthesis."
+                "A subclass already has every parent method. Your job is only to add the extra attribute and adjust the label; keep `is_ready` out of the child.",
+                "Inside the child's `__init__`, the parent's setup runs when you call it through `super()` with the two arguments the parent expects; then save the third argument on `self`.",
+                "In the overriding `label`, save the result of `super().label()` in a variable (or use it directly inside an f-string) and add a space, an opening parenthesis, the context window, `' tokens'` and a closing parenthesis."
             ], effort: .init(difficulty: .similar, scopeUnits: 2)),
             exercise("inheritance-token-properties", "Computed token totals with properties", """
             Goal:
-            Use @property for values that must always be computed from current attributes, and override a property in a subclass.
+            Use `@property` for values that must always be computed from the current attributes, and override a property in a subclass.
 
             Starting code:
-            class TokenBatch has __init__(self, prompt_tokens, output_tokens) that saves both counts, and a plain method billable_tokens that returns the placeholder 0. class CachedTokenBatch(TokenBatch) has a complete __init__(self, prompt_tokens, output_tokens, cached_tokens) that already calls super().__init__ and saves cached_tokens; its billable_tokens also returns the placeholder 0. Cached tokens are tokens a service reused from an earlier request and does not charge for.
+            - `class TokenBatch` has `__init__(self, prompt_tokens, output_tokens)`, which saves both counts. Keep it.
+            - `TokenBatch.billable_tokens` is a plain method that returns the placeholder `0`. Replace it.
+            - `class CachedTokenBatch(TokenBatch)` has a complete `__init__(self, prompt_tokens, output_tokens, cached_tokens)` that already calls `super().__init__` and saves `cached_tokens`. Keep it.
+            - `CachedTokenBatch.billable_tokens` also returns the placeholder `0`. Replace it.
+
+            **Cached tokens** are tokens a service reused from an earlier request and does not charge for.
 
             Your task:
-            1. In TokenBatch, put @property on the line directly above def billable_tokens(self) and make it return prompt_tokens plus output_tokens.
-            2. In CachedTokenBatch, make billable_tokens a property too. It must return the parent's billable total minus cached_tokens, read with super().billable_tokens (no parentheses).
-            3. A bill can never be negative: if cached_tokens is larger than the parent's total, return 0. max(0, value) gives this.
-            4. Do not store the total in __init__: it must update when an attribute changes later.
+            1. In `TokenBatch`, put `@property` on the line directly above `def billable_tokens(self)`.
+            2. Make it return `prompt_tokens` plus `output_tokens`.
+            3. In `CachedTokenBatch`, make `billable_tokens` a property too.
+            4. Make it return the parent's billable total minus `cached_tokens`, reading the parent's total with `super().billable_tokens` (no parentheses).
+            5. A bill can never be negative: if `cached_tokens` is larger than the parent's total, return `0`. `max(0, value)` gives this.
+            6. Do not store the total in `__init__`: it must update when an attribute changes later.
 
             Expected result:
-            TokenBatch(120, 30).billable_tokens is 150 (no parentheses) and TokenBatch(0, 0).billable_tokens is 0. CachedTokenBatch(120, 30, 100).billable_tokens is 50; CachedTokenBatch(10, 5, 15) and CachedTokenBatch(10, 5, 40) give 0; CachedTokenBatch(10, 5, 0) gives 15. After batch = TokenBatch(120, 30) and batch.output_tokens = 50, batch.billable_tokens is 170.
+            - `TokenBatch(120, 30).billable_tokens` is `150` (no parentheses).
+            - `TokenBatch(0, 0).billable_tokens` is `0`.
+            - `CachedTokenBatch(120, 30, 100).billable_tokens` is `50`.
+            - `CachedTokenBatch(10, 5, 15)` and `CachedTokenBatch(10, 5, 40)` give `0`.
+            - `CachedTokenBatch(10, 5, 0)` gives `15`.
+            - After `batch = TokenBatch(120, 30)` and `batch.output_tokens = 50`, `batch.billable_tokens` is `170`.
 
             Check:
-            Choose Check solution. It reads both properties without parentheses, confirms they are defined with @property in each class, and checks zero, exact-cancel and over-cancel cases plus updates after attribute changes.
+            Choose **Check solution**. It reads both properties without parentheses, confirms they are defined with `@property` in each class, and checks zero, exact-cancel and over-cancel cases plus updates after attribute changes.
             """, """
             class TokenBatch:
                 def __init__(self, prompt_tokens, output_tokens):
@@ -420,29 +564,39 @@ extension Curriculum {
             assert cached.billable_tokens == 150
             assert isinstance(cached, TokenBatch)
             """, [
-                "A property is still written with def and self; the decorator line above it is what lets callers leave out the parentheses.",
-                "The parent's property adds two attributes. The child's property starts from the parent's value, which super() can read the same way any caller reads a property.",
-                "In the child, subtract self.cached_tokens from super().billable_tokens and pass that difference to max together with 0 so the result never drops below zero."
+                "A property is still written with `def` and `self`; the decorator line above it is what lets callers leave out the parentheses.",
+                "The parent's property adds two attributes. The child's property starts from the parent's value, which `super()` can read the same way any caller reads a property.",
+                "In the child, subtract `self.cached_tokens` from `super().billable_tokens` and pass that difference to `max` together with `0` so the result never drops below zero."
             ], effort: .init(difficulty: .similar, scopeUnits: 2)),
             exercise("inheritance-scorers", "Abstract scorers inside an evaluator", """
             Goal:
             Design a small family of answer scorers with an abstract base class, specialise one scorer by overriding, and compose an evaluator that works with any scorer.
 
             Starting code:
-            from abc import ABC, abstractmethod is supplied. class Scorer is a plain class whose score method returns the placeholder 0.0. class ExactMatch(Scorer) and class LooseMatch(ExactMatch) have score methods returning 0.0. class Evaluator stores a scorer in __init__ and its average method returns 0.0. All placeholders must be replaced.
+            - `from abc import ABC, abstractmethod` is supplied. Keep it.
+            - `class Scorer` is a plain class whose `score` method returns the placeholder `0.0`.
+            - `class ExactMatch(Scorer)` and `class LooseMatch(ExactMatch)` have `score` methods returning the placeholder `0.0`.
+            - `class Evaluator` stores a scorer in `__init__`, and its `average` method returns the placeholder `0.0`.
+            - All placeholders must be replaced.
 
             Your task:
-            1. Make Scorer abstract: inherit from ABC and put @abstractmethod above score(self, prediction, expected). Its body can be pass. Scorer() must then raise TypeError.
-            2. ExactMatch.score(prediction, expected) returns 1.0 when the two strings are exactly equal and 0.0 otherwise.
-            3. LooseMatch overrides score to ignore surrounding spaces and letter case: strip and lowercase both strings, then return super().score(...) with the cleaned strings, reusing ExactMatch's comparison.
-            4. Evaluator(scorer) must raise TypeError if scorer is not an instance of Scorer (any subclass is fine); otherwise save it as self.scorer.
-            5. Evaluator.average(pairs) receives a list of (prediction, expected) tuples. Return the mean of self.scorer.score for every pair as a float, or 0.0 for an empty list. Do not change the list.
+            1. Make `Scorer` abstract: inherit from `ABC` and put `@abstractmethod` above `score(self, prediction, expected)`. Its body can be `pass`. `Scorer()` must then raise `TypeError`.
+            2. `ExactMatch.score(prediction, expected)` returns `1.0` when the two strings are exactly equal and `0.0` otherwise.
+            3. `LooseMatch` overrides `score` to ignore surrounding spaces and letter case: strip and lowercase both strings.
+            4. `LooseMatch.score` then returns `super().score(...)` with the cleaned strings, reusing `ExactMatch`'s comparison.
+            5. `Evaluator(scorer)` must raise `TypeError` if `scorer` is not an instance of `Scorer` (any subclass is fine). Otherwise it saves it as `self.scorer`.
+            6. `Evaluator.average(pairs)` receives a list of `(prediction, expected)` tuples. Return the mean of `self.scorer.score` for every pair as a float, or `0.0` for an empty list. Do not change the list.
 
             Expected result:
-            ExactMatch().score('Paris', 'Paris') is 1.0 and ExactMatch().score('paris', 'Paris') is 0.0. LooseMatch().score('  paris ', 'Paris') is 1.0. For pairs = [('Paris', 'Paris'), (' paris', 'Paris'), ('Rome', 'Oslo'), ('OSLO', 'oslo')], Evaluator(ExactMatch()).average(pairs) is 0.25 and Evaluator(LooseMatch()).average(pairs) is 0.75. Evaluator(LooseMatch()).average([]) is 0.0. Evaluator('exact') raises TypeError.
+            - `ExactMatch().score('Paris', 'Paris')` is `1.0`.
+            - `ExactMatch().score('paris', 'Paris')` is `0.0`.
+            - `LooseMatch().score('  paris ', 'Paris')` is `1.0`.
+            - For `pairs = [('Paris', 'Paris'), (' paris', 'Paris'), ('Rome', 'Oslo'), ('OSLO', 'oslo')]`, `Evaluator(ExactMatch()).average(pairs)` is `0.25` and `Evaluator(LooseMatch()).average(pairs)` is `0.75`.
+            - `Evaluator(LooseMatch()).average([])` is `0.0`.
+            - `Evaluator('exact')` raises `TypeError`.
 
             Check:
-            Choose Check solution. It also creates its own Scorer subclass to confirm the evaluator works with any scorer, and temporarily changes ExactMatch.score to confirm LooseMatch reuses it through super().
+            Choose **Check solution**. It also creates its own `Scorer` subclass to confirm the evaluator works with any scorer, and temporarily changes `ExactMatch.score` to confirm `LooseMatch` reuses it through `super()`.
             """, """
             from abc import ABC, abstractmethod
 
@@ -537,8 +691,8 @@ extension Curriculum {
             assert patched_score == 0.5, "LooseMatch should return super().score(...)."
             """, [
                 "There are four separate jobs: an abstract template, an exact comparison, a cleaned-up comparison that reuses the exact one, and an evaluator that holds a scorer and averages its results.",
-                "Abstract means: inherit from ABC and decorate the method with abstractmethod. The evaluator checks its argument with isinstance against the parent class Scorer, so every subclass is accepted.",
-                "For average, guard the empty list first, then loop with for prediction, expected in pairs, add self.scorer.score(prediction, expected) to a running total, and divide by len(pairs)."
+                "Abstract means: inherit from `ABC` and decorate the method with `abstractmethod`. The evaluator checks its argument with `isinstance` against the parent class `Scorer`, so every subclass is accepted.",
+                "For `average`, guard the empty list first, then loop with `for prediction, expected in pairs`, add `self.scorer.score(prediction, expected)` to a running total, and divide by `len(pairs)`."
             ], effort: .init(difficulty: .harder, scopeUnits: 3))
         ],
         assessment: exercise("inheritance-assessment", "Price plans and accounts", """
@@ -546,20 +700,31 @@ extension Curriculum {
         Model subscription price plans as an abstract family of classes, and compose an account that bills through whichever plan it holds.
 
         Starting code:
-        class Plan saves name and monthly_fee in __init__; its annual_fee and charge methods return placeholder 0. class FlatPlan(Plan) contains only pass. class MeteredPlan(Plan) has an __init__(self, name, monthly_fee, included_units, unit_price) that saves only the last two values. class Account saves owner and plan; its bill method returns 0. You may add from abc import ABC, abstractmethod at the top.
+        - `class Plan` saves `name` and `monthly_fee` in `__init__`. Its `annual_fee` and `charge` methods return the placeholder `0`.
+        - `class FlatPlan(Plan)` contains only `pass`.
+        - `class MeteredPlan(Plan)` has an `__init__(self, name, monthly_fee, included_units, unit_price)` that saves only the last two values.
+        - `class Account` saves `owner` and `plan`. Its `bill` method returns the placeholder `0`.
+        - You may add `from abc import ABC, abstractmethod` at the top.
 
         Your task:
-        1. Make Plan an abstract base class whose charge(self, units) method is abstract. Plan('x', 1) and any subclass that does not define charge must raise TypeError when created.
-        2. Make annual_fee a property of Plan returning monthly_fee * 12, always computed from the current monthly_fee.
-        3. FlatPlan.charge(units) returns monthly_fee whatever the number of units.
-        4. MeteredPlan.__init__ must call super().__init__(name, monthly_fee) and save included_units and unit_price. Its charge(units) returns monthly_fee plus unit_price for every unit above included_units; using included_units or fewer costs just monthly_fee.
-        5. Account(owner, plan) raises TypeError when plan is not an instance of Plan. Account.bill(units) returns the charge of the plan currently stored in self.plan.
+        1. Make `Plan` an abstract base class whose `charge(self, units)` method is abstract. `Plan('x', 1)` and any subclass that does not define `charge` must raise `TypeError` when created.
+        2. Make `annual_fee` a property of `Plan` returning `monthly_fee * 12`, always computed from the current `monthly_fee`.
+        3. `FlatPlan.charge(units)` returns `monthly_fee` whatever the number of units.
+        4. `MeteredPlan.__init__` must call `super().__init__(name, monthly_fee)` and save `included_units` and `unit_price`.
+        5. `MeteredPlan.charge(units)` returns `monthly_fee` plus `unit_price` for every unit above `included_units`. Using `included_units` or fewer costs just `monthly_fee`.
+        6. `Account(owner, plan)` raises `TypeError` when `plan` is not an instance of `Plan`.
+        7. `Account.bill(units)` returns the charge of the plan currently stored in `self.plan`.
 
         Expected result:
-        FlatPlan('basic', 10).charge(0) and .charge(5000) are 10. For MeteredPlan('pro', 20, 1000, 2): charge(0), charge(999) and charge(1000) are 20, charge(1003) is 26, and annual_fee is 240. FlatPlan('basic', 10).annual_fee is 120. Account('mira', MeteredPlan('team', 5, 10, 3)).bill(12) is 11; after setting that account's plan to FlatPlan('basic', 7), bill(12) is 7. Account('mira', 'basic') raises TypeError.
+        - `FlatPlan('basic', 10).charge(0)` and `.charge(5000)` are both `10`.
+        - For `MeteredPlan('pro', 20, 1000, 2)`: `charge(0)`, `charge(999)` and `charge(1000)` are `20`, `charge(1003)` is `26`, and `annual_fee` is `240`.
+        - `FlatPlan('basic', 10).annual_fee` is `120`.
+        - `Account('mira', MeteredPlan('team', 5, 10, 3)).bill(12)` is `11`.
+        - After setting that account's `plan` to `FlatPlan('basic', 7)`, `bill(12)` is `7`.
+        - `Account('mira', 'basic')` raises `TypeError`.
 
         Check:
-        Complete the theory questions and written explanation, then choose Submit assessment. It checks boundaries at the included units, the abstract base class, the property, inheritance with isinstance and delegation from Account. Work independently; hints and solutions are unavailable.
+        Complete the theory questions and written explanation, then choose **Submit assessment**. It checks boundaries at the included units, the abstract base class, the property, inheritance with `isinstance` and delegation from `Account`. Work independently; hints and solutions are unavailable.
         """, """
         class Plan:
             def __init__(self, name, monthly_fee):
@@ -686,17 +851,48 @@ extension Curriculum {
         lesson: """
         # Tests are programs that check programs
 
-        In the reliability chapter you used `assert` lines as evidence that a function works. That is already testing, but it has limits: the first failing `assert` stops everything, so you never learn whether the other checks would pass, and nothing records which check failed or why. Python's standard library includes **unittest**, a testing framework: a set of tools for writing many named checks, running all of them, and reporting the results.
+        In the reliability chapter you used `assert` lines as evidence that a function works. That is already testing, but it has limits:
 
-        A **test** is a small piece of code that calls the code under test with chosen inputs and checks the result. The code under test is often called the **implementation**. A group of tests is a **test suite**. A good suite does two jobs: it passes when the implementation is correct, and it *fails* when the implementation has a bug. This chapter teaches both halves. In the exercises the implementation is supplied and correct; your job is to write the tests, and the checks will try your tests against deliberately broken versions.
+        - the first failing `assert` stops everything, so you never learn whether the other checks would pass;
+        - nothing records which check failed or why.
+
+        Python's standard library includes **unittest**, a testing framework: a set of tools for writing many named checks, running all of them, and reporting the results.
+
+        ### Some vocabulary
+
+        - A **test** is a small piece of code that calls the code under test with chosen inputs and checks the result.
+        - The code under test is often called the **implementation**.
+        - A group of tests is a **test suite**.
+
+        > **Key idea:** A good suite does two jobs: it passes when the implementation is correct, and it *fails* when the implementation has a bug.
+
+        This chapter teaches both halves. In the exercises the implementation is supplied and correct; your job is to write the tests, and the checks will try your tests against deliberately broken versions.
 
         ## Write a test case class
 
-        With unittest, tests live in a class. `import unittest` makes the module available. Writing `class TablesNeededTests(unittest.TestCase):` creates a class that builds on unittest's `TestCase` class and receives all of its helper methods, in the same way that a custom exception class built on `Exception` gets exception behaviour. Here you only need this pattern; a separate Software craft chapter on inheritance goes deeper into how one class builds on another, but this chapter does not assume you have read it.
+        With unittest, tests live in a class.
 
-        Inside the class, every method whose name **starts with `test`** is one test. Each test method takes `self`, calls the implementation and checks the result with an assertion method. The most common is `self.assertEqual(actual, expected)`: it passes when the two values are equal, and otherwise fails with a message showing both values.
+        ### The test class
 
-        The example below ends with a few lines that run the tests. One of them uses `io.StringIO()` from the standard `io` module (another standard-library module, imported with `import io` like the modules in the files chapter): it creates an in-memory text container that behaves like a file opened for writing, but no real file is created. Here it gives unittest somewhere to write its report so that nothing is printed. For example, `box = io.StringIO()` followed by `box.write("hi")` stores the text, and `box.getvalue()` returns `'hi'`.
+        `import unittest` makes the module available.
+
+        Writing `class TablesNeededTests(unittest.TestCase):` creates a class that builds on unittest's `TestCase` class and receives all of its helper methods. This works in the same way that a custom exception class built on `Exception` gets exception behaviour.
+
+        Here you only need this pattern. A separate Software craft chapter on inheritance goes deeper into how one class builds on another, but this chapter does not assume you have read it.
+
+        ### Test methods
+
+        - Inside the class, every method whose name **starts with `test`** is one test.
+        - Each test method takes `self`, calls the implementation and checks the result with an assertion method.
+        - The most common is `self.assertEqual(actual, expected)`: it passes when the two values are equal, and otherwise fails with a message showing both values.
+
+        ### Somewhere to put the report: io.StringIO
+
+        The example below ends with a few lines that run the tests. One of them uses `io.StringIO()` from the standard `io` module (another standard-library module, imported with `import io` like the modules in the files chapter).
+
+        `io.StringIO()` creates an in-memory text container that behaves like a file opened for writing, but no real file is created. Here it gives unittest somewhere to write its report so that nothing is printed.
+
+        For example, `box = io.StringIO()` followed by `box.write("hi")` stores the text, and `box.getvalue()` returns `'hi'`.
 
         ```python
         import io
@@ -725,13 +921,28 @@ extension Curriculum {
         assert result.wasSuccessful()
         ```
 
-        This displays 3 and True. You never call the test methods yourself. The last lines (explained in the next section) ask unittest to find every `test...` method, create a fresh instance of the class for each one, run it, and collect the outcome. A method named `check_total` would silently **not** run, because its name does not start with `test`.
+        ```text
+        3
+        True
+        ```
+
+        - You never call the test methods yourself.
+        - The last lines (explained in the next section) ask unittest to find every `test...` method, create a fresh instance of the class for each one, run it, and collect the outcome.
+
+        > **Watch out:** A method named `check_total` would silently **not** run, because its name does not start with `test`.
 
         ## Run a suite yourself
 
         There are two convenient ways to run your tests in the editor.
 
-        **1. `unittest.main(argv=[''], exit=False)`** finds every TestCase class in your program, runs all their tests, and prints a report. `argv=['']` tells it to ignore command-line options (there are none in the editor), and `exit=False` tells it not to stop the whole program afterwards. Here is a suite whose implementation has a bug: it forgets to round up.
+        ### Option 1: unittest.main
+
+        `unittest.main(argv=[''], exit=False)` finds every TestCase class in your program, runs all their tests, and prints a report.
+
+        - `argv=['']` tells it to ignore command-line options (there are none in the editor).
+        - `exit=False` tells it not to stop the whole program afterwards.
+
+        Here is a suite whose implementation has a bug: it forgets to round up.
 
         ```python
         import unittest
@@ -752,17 +963,76 @@ extension Curriculum {
         unittest.main(argv=[''], exit=False)
         ```
 
-        The report starts with one character per test: `.` for a pass, `F` for a **failure** (an assertion did not hold) and `E` for an **error** (the test crashed with some other exception, such as a `TypeError`). Here it shows `.F`, then a block headed `FAIL: test_one_extra_guest` containing `AssertionError: 3 != 4` (actual value first, expected second), and finally `Ran 2 tests` and `FAILED (failures=1)`. When everything passes, the last line is `OK`. The exact layout of the header line varies a little between Python versions.
+        ### Reading the report
 
-        **2. The runner approach** gives you the result as a value instead of only a printed report, which is useful when code needs to inspect it. `unittest.defaultTestLoader.loadTestsFromTestCase(TheClass)` collects the tests of one class into a suite. `unittest.TextTestRunner(stream=io.StringIO())` creates a runner whose report goes into the in-memory `io.StringIO()` container introduced above, so nothing is printed. `.run(suite)` runs the tests and returns a result object. `result.wasSuccessful()` is True only if every test passed; `result.testsRun` counts the tests; `result.failures` and `result.errors` are lists of what went wrong. The first example in this lesson used this approach, and the app's checks use it too.
+        The report starts with one character per test:
 
-        Your exercise code may keep a `unittest.main(argv=[''], exit=False)` line at the bottom while you work; it only prints a report and does not affect **Check solution**.
+        - `.` for a pass;
+        - `F` for a **failure** (an assertion did not hold);
+        - `E` for an **error** (the test crashed with some other exception, such as a `TypeError`).
+
+        For the suite above, the report looks roughly like this. The exact layout of the header line varies a little between Python versions.
+
+        ```text
+        .F
+        ======================================================================
+        FAIL: test_one_extra_guest (__main__.TablesNeededTests)
+        ----------------------------------------------------------------------
+        Traceback (most recent call last):
+          ...
+        AssertionError: 3 != 4
+
+        ----------------------------------------------------------------------
+        Ran 2 tests in 0.001s
+
+        FAILED (failures=1)
+        ```
+
+        - It shows `.F`, then a block headed `FAIL: test_one_extra_guest`.
+        - `AssertionError: 3 != 4` lists the actual value first and the expected value second.
+        - The summary says `Ran 2 tests` and `FAILED (failures=1)`.
+        - When everything passes, the last line is `OK`.
+
+        ### Option 2: the runner approach
+
+        The runner approach gives you the result as a value instead of only a printed report, which is useful when code needs to inspect it.
+
+        1. `unittest.defaultTestLoader.loadTestsFromTestCase(TheClass)` collects the tests of one class into a suite.
+        2. `unittest.TextTestRunner(stream=io.StringIO())` creates a runner whose report goes into the in-memory `io.StringIO()` container introduced above, so nothing is printed.
+        3. `.run(suite)` runs the tests and returns a result object.
+
+        The result object tells you what happened:
+
+        - `result.wasSuccessful()` is `True` only if every test passed;
+        - `result.testsRun` counts the tests;
+        - `result.failures` and `result.errors` are lists of what went wrong.
+
+        The first example in this lesson used this approach, and the app's checks use it too.
+
+        > **Tip:** Your exercise code may keep a `unittest.main(argv=[''], exit=False)` line at the bottom while you work. It only prints a report and does not affect **Check solution**.
 
         ## Check errors and decimals: assertRaises and assertAlmostEqual
 
-        Some behaviour is an exception, not a return value. `with self.assertRaises(ValueError):` followed by an indented block checks that the block raises `ValueError`. This is the same `with` statement you used in the files chapter to open a file for an indented block and close it automatically afterwards. Here, instead of a file, `with` hands the block to `assertRaises`: it runs the indented block and then lets `assertRaises` inspect what happened: the test fails if no exception was raised, and it errors if a *different* exception type was raised. Put only the call that should fail inside the block.
+        ### Expecting an exception with assertRaises
 
-        Decimal numbers need a different comparison. Floats are stored in binary, so tiny rounding differences are normal: `0.1 + 0.2 == 0.3` is False. `self.assertAlmostEqual(actual, expected)` rounds the difference to 7 decimal places and passes if that rounded difference is zero. You can pass `places=3` to compare to 3 decimal places instead. Use it for every float result that comes from division or multiplication by decimals. Two more simple helpers exist: `self.assertTrue(value)` and `self.assertFalse(value)`.
+        Some behaviour is an exception, not a return value. `with self.assertRaises(ValueError):` followed by an indented block checks that the block raises `ValueError`.
+
+        This is the same `with` statement you used in the files chapter to open a file for an indented block and close it automatically afterwards. Here, instead of a file, `with` hands the block to `assertRaises`. It runs the indented block and then lets `assertRaises` inspect what happened:
+
+        - the test fails if no exception was raised;
+        - the test errors if a *different* exception type was raised.
+
+        Put only the call that should fail inside the block.
+
+        ### Comparing decimals with assertAlmostEqual
+
+        Decimal numbers need a different comparison. Floats are stored in binary, so tiny rounding differences are normal: `0.1 + 0.2 == 0.3` is `False`.
+
+        - `self.assertAlmostEqual(actual, expected)` rounds the difference to 7 decimal places and passes if that rounded difference is zero.
+        - You can pass `places=3` to compare to 3 decimal places instead.
+        - Use it for every float result that comes from division or multiplication by decimals.
+
+        Two more simple helpers exist: `self.assertTrue(value)` and `self.assertFalse(value)`.
 
         ```python
         import io
@@ -794,11 +1064,23 @@ extension Curriculum {
         print(0.1 + 0.2 == 0.3)
         ```
 
-        This displays `0.15000000000000002` and `False`: `assertEqual(average_rating([0.1, 0.2]), 0.15)` would have failed even though the implementation is correct. A test that fails on correct code is just as misleading as one that passes on broken code.
+        ```text
+        0.15000000000000002
+        False
+        ```
+
+        So `assertEqual(average_rating([0.1, 0.2]), 0.15)` would have failed even though the implementation is correct.
+
+        > **Watch out:** A test that fails on correct code is just as misleading as one that passes on broken code.
 
         ## Share preparation with setUp
 
-        When several tests need the same starting object, define a method named exactly `setUp(self)` (capital U). unittest calls it **before each test method**, on that test's own instance. Save what you build on `self`, for example `self.counter = ClickCounter()`, and read it in the tests. Because `setUp` runs again for every test, each test starts with a fresh object; a change made in one test cannot leak into another. This **test isolation** means tests can run in any order.
+        When several tests need the same starting object, define a method named exactly `setUp(self)` (capital U).
+
+        - unittest calls it **before each test method**, on that test's own instance.
+        - Save what you build on `self`, for example `self.counter = ClickCounter()`, and read it in the tests.
+
+        > **Key idea:** Because `setUp` runs again for every test, each test starts with a fresh object; a change made in one test cannot leak into another. This **test isolation** means tests can run in any order.
 
         ```python
         import io
@@ -838,11 +1120,32 @@ extension Curriculum {
         assert result.wasSuccessful()
         ```
 
-        This displays 3. `test_starts_at_zero` still sees 0 even if `test_add_increases` ran first, because each test got its own new counter. The last test also checks that a *rejected* call left the object unchanged, a detail that is easy to forget and a common source of bugs.
+        ```text
+        3
+        ```
+
+        - `test_starts_at_zero` still sees 0 even if `test_add_increases` ran first, because each test got its own new counter.
+        - The last test also checks that a *rejected* call left the object unchanged, a detail that is easy to forget and a common source of bugs.
 
         ## Design tests around boundaries
 
-        You cannot test every possible input, so choose inputs that are most likely to reveal mistakes. Group inputs into ranges that should behave the same way (for a pass mark of 50: failing scores and passing scores), then test **one ordinary value from each group** and the **boundaries** between groups. Bugs cluster at boundaries: writing `>` instead of `>=` changes the result only for the exact boundary value. For a rule "score 50 or more passes", test 49, 50 and a typical value such as 80. Also consider the smallest possible input (zero, an empty list, an empty string), the largest allowed value, and every documented error, including the value just outside the allowed range.
+        You cannot test every possible input, so choose the inputs that are most likely to reveal mistakes.
+
+        ### Groups and boundaries
+
+        1. Group inputs into ranges that should behave the same way (for a pass mark of 50: failing scores and passing scores).
+        2. Test **one ordinary value from each group**.
+        3. Test the **boundaries** between groups.
+
+        > **Key idea:** Bugs cluster at boundaries. Writing `>` instead of `>=` changes the result only for the exact boundary value.
+
+        For a rule "score 50 or more passes", test 49, 50 and a typical value such as 80.
+
+        ### Other inputs worth testing
+
+        - the smallest possible input (zero, an empty list, an empty string);
+        - the largest allowed value;
+        - every documented error, including the value just outside the allowed range.
 
         ```python
         import io
@@ -869,11 +1172,20 @@ extension Curriculum {
         print(result.testsRun)
         ```
 
-        This displays 2. Give each test a descriptive name saying which behaviour it checks; when it fails, the name tells you where to look. A test may contain several assertions about the same behaviour.
+        ```text
+        2
+        ```
+
+        - Give each test a descriptive name saying which behaviour it checks; when it fails, the name tells you where to look.
+        - A test may contain several assertions about the same behaviour.
 
         ## Make sure your tests catch bugs
 
-        How do you know whether a suite is good? Run it against implementations you *know* are wrong. If a broken version still passes, the suite has a blind spot. This idea is called **mutation testing**: make small deliberate changes (mutations) such as `>=` to `>`, and check that some test fails for each. Test methods look up the implementation's name each time they run, so you can temporarily point the name at a buggy version:
+        How do you know whether a suite is good? Run it against implementations you *know* are wrong. If a broken version still passes, the suite has a blind spot.
+
+        This idea is called **mutation testing**: make small deliberate changes (mutations) such as `>=` to `>`, and check that some test fails for each.
+
+        Test methods look up the implementation's name each time they run, so you can temporarily point the name at a buggy version:
 
         ```python
         import io
@@ -913,31 +1225,65 @@ extension Curriculum {
         assert caught
         ```
 
-        This displays True: `test_below_zero` caught the mutation. The app's checks do exactly this with your test classes, so keep the supplied function or class under its original name and call it by that name inside each test method (or in `setUp`). They run your tests against a correct implementation (all must pass), sometimes against an *equivalent* implementation that rounds floats slightly differently (all must still pass), and against several buggy implementations (each must make at least one of your tests fail). The check messages name any bug your tests missed.
+        ```text
+        True
+        ```
 
-        **Common mistakes and debugging.** A test method whose name does not start with `test` never runs, so check `result.testsRun`. Writing `setup` instead of `setUp` means it is never called, and tests then error with `AttributeError` on `self.counter`. Forgetting `self.` before `assertEqual` gives a `NameError`. Calling the failing function *outside* the `with self.assertRaises(...)` block makes the test crash instead of pass. Comparing floats with `assertEqual` makes tests fail on correct code. A test with only `pass` in its body always passes and catches nothing. Finally, test returned values, not printed text, and keep each test independent by building fresh objects in `setUp`.
+        `test_below_zero` caught the mutation.
+
+        ### How the app's checks use this
+
+        The app's checks do exactly this with your test classes. They run your tests against:
+
+        - a correct implementation (all must pass);
+        - sometimes an *equivalent* implementation that rounds floats slightly differently (all must still pass);
+        - several buggy implementations (each must make at least one of your tests fail).
+
+        The check messages name any bug your tests missed.
+
+        > **Remember:** Keep the supplied function or class under its original name, and call it by that name inside each test method (or in `setUp`).
+
+        ### Common mistakes and debugging
+
+        - A test method whose name does not start with `test` never runs, so check `result.testsRun`.
+        - Writing `setup` instead of `setUp` means it is never called, and tests then error with `AttributeError` on `self.counter`.
+        - Forgetting `self.` before `assertEqual` gives a `NameError`.
+        - Calling the failing function *outside* the `with self.assertRaises(...)` block makes the test crash instead of pass.
+        - Comparing floats with `assertEqual` makes tests fail on correct code.
+        - A test with only `pass` in its body always passes and catches nothing.
+        - Test returned values, not printed text.
+        - Keep each test independent by building fresh objects in `setUp`.
         """,
         exercises: [
             exercise("testing-latency-bands", "Test latency bands at their boundaries", """
             Goal:
-            Write a unittest test case whose tests pass for a correct latency classifier and fail for buggy versions, especially at the band boundaries.
+            Write a unittest test case whose tests pass for a correct latency classifier and fail for buggy versions, especially at the band boundaries (the exact values where one label changes to the next).
 
             Starting code:
-            import unittest is supplied. latency_band(ms) is a correct, complete implementation: below 200 milliseconds it returns 'fast', from 200 up to but not including 1000 it returns 'ok', and 1000 or more returns 'slow'. Do not change it. class LatencyBandTests(unittest.TestCase) has three test methods: test_fast already contains one example assertion, while test_ok and test_slow contain only the placeholder pass, which tests nothing.
+            - `import unittest` is supplied.
+            - `latency_band(ms)` is a correct, complete implementation. Do not change it. Below 200 milliseconds it returns `'fast'`, from 200 up to but not including 1000 it returns `'ok'`, and 1000 or more returns `'slow'`.
+            - `class LatencyBandTests(unittest.TestCase)` has three test methods.
+            - `test_fast` already contains one example assertion.
+            - `test_ok` and `test_slow` contain only the placeholder `pass`, which tests nothing.
 
             Your task:
-            1. Keep the class name LatencyBandTests and the three method names.
-            2. Keep the supplied latency_band function with its exact name, and call it by that name, latency_band(...), inside each test method, as the example does. The check temporarily swaps buggy versions in under the name latency_band, so a test that calls a renamed copy instead cannot catch them.
-            3. In test_fast, keep the example and add self.assertEqual(latency_band(199), 'fast') for the value just below the boundary.
-            4. Replace pass in test_ok with assertEqual checks that latency_band(200) and latency_band(999) both return 'ok'.
-            5. Replace pass in test_slow with assertEqual checks that latency_band(1000) and latency_band(5000) both return 'slow'.
-            6. Optionally add unittest.main(argv=[''], exit=False) at the bottom and choose Run to see the report.
+            1. Keep the class name `LatencyBandTests` and the three method names.
+            2. Keep the supplied `latency_band` function with its exact name, and call it by that name, `latency_band(...)`, inside each test method, as the example does. The check temporarily swaps buggy versions in under the name `latency_band`, so a test that calls a renamed copy instead cannot catch them.
+            3. In `test_fast`, keep the example and add `self.assertEqual(latency_band(199), 'fast')` for the value just below the boundary.
+            4. Replace `pass` in `test_ok` with `assertEqual` checks that `latency_band(200)` and `latency_band(999)` both return `'ok'`.
+            5. Replace `pass` in `test_slow` with `assertEqual` checks that `latency_band(1000)` and `latency_band(5000)` both return `'slow'`.
+            6. Optionally add `unittest.main(argv=[''], exit=False)` at the bottom and choose **Run** to see the report.
 
             Expected result:
-            All three tests pass for the supplied latency_band. Your tests also fail for each of these bugs: 200 ms reported as 'fast'; the fast limit lowered so 199 ms is 'ok'; 1000 ms reported as 'ok'; the label 'okay' instead of 'ok'; and a version that never returns 'slow'.
+            - All three tests pass for the supplied `latency_band`.
+            - Your tests fail for a version that reports 200 ms as `'fast'`.
+            - They fail for a version whose fast limit is lowered so that 199 ms is `'ok'`.
+            - They fail for a version that reports 1000 ms as `'ok'`.
+            - They fail for a version that uses the label `'okay'` instead of `'ok'`.
+            - They fail for a version that never returns `'slow'`.
 
             Check:
-            Choose Check solution. It runs your LatencyBandTests against its own correct latency_band (every test must pass) and then against five buggy versions (each must cause at least one failure). A message names any bug your tests missed.
+            Choose **Check solution**. It runs your `LatencyBandTests` against its own correct `latency_band` (every test must pass) and then against five buggy versions (each must cause at least one failure). A message names any bug your tests missed.
             """, """
             import unittest
 
@@ -1043,30 +1389,37 @@ extension Curriculum {
             assert latency_band is supplied_band
             """, [
                 "Bugs hide at the edges of each band. For every boundary, test the last value of one band and the first value of the next.",
-                "Each new check has the same shape as the supplied example: self.assertEqual(call, expected_text). A test method can hold several of them.",
-                "test_ok needs the two edge values 200 and 999 compared with 'ok'; test_slow needs 1000 and one large value compared with 'slow'. Remove the pass lines once a method has real checks."
+                "Each new check has the same shape as the supplied example: `self.assertEqual(call, expected_text)`. A test method can hold several of them.",
+                "`test_ok` needs the two edge values `200` and `999` compared with `'ok'`; `test_slow` needs `1000` and one large value compared with `'slow'`. Remove the `pass` lines once a method has real checks."
             ], effort: .init(difficulty: .similar, scopeUnits: 2)),
             exercise("testing-cost-errors", "Test a cost estimator with floats and errors", """
             Goal:
-            Write tests that compare decimal results safely with assertAlmostEqual and check a documented error with assertRaises.
+            Write tests that compare decimal results safely with `assertAlmostEqual` and check a documented error with `assertRaises`.
 
             Starting code:
-            import unittest is supplied. estimate_cost(tokens, rate_per_1000) is a correct implementation: it raises ValueError when tokens is negative, and otherwise returns tokens / 1000 * rate_per_1000 (charged proportionally, so 250 tokens cost a quarter of the rate). Do not change it. class EstimateCostTests(unittest.TestCase) has four test methods whose bodies are only pass.
+            - `import unittest` is supplied.
+            - `estimate_cost(tokens, rate_per_1000)` is a correct implementation. Do not change it. It raises `ValueError` when `tokens` is negative, and otherwise returns `tokens / 1000 * rate_per_1000` (charged proportionally, so 250 tokens cost a quarter of the rate).
+            - `class EstimateCostTests(unittest.TestCase)` has four test methods whose bodies are only the placeholder `pass`.
 
             Your task:
             1. Keep the class name and the four method names.
-            2. Keep the supplied estimate_cost function with its exact name, and call it by that name, estimate_cost(...), inside each test method. The check temporarily swaps other versions in under the name estimate_cost, so a test that calls a renamed copy instead cannot catch the bugs.
-            3. test_typical_cost: check with assertAlmostEqual that estimate_cost(1500, 0.002) is 0.003.
-            4. test_partial_thousand: check with assertAlmostEqual that estimate_cost(250, 4.0) is 1.0.
-            5. test_zero_tokens: check with assertAlmostEqual that estimate_cost(0, 4.0) is 0.0 (zero tokens are allowed and cost nothing).
-            6. test_negative_tokens_rejected: use with self.assertRaises(ValueError): and call estimate_cost(-1, 0.002) inside the block.
-            7. Compare every cost with assertAlmostEqual, never assertEqual: the checks also run an equivalent implementation whose results differ by less than 0.000000001.
+            2. Keep the supplied `estimate_cost` function with its exact name, and call it by that name, `estimate_cost(...)`, inside each test method. The check temporarily swaps other versions in under the name `estimate_cost`, so a test that calls a renamed copy instead cannot catch the bugs.
+            3. In `test_typical_cost`, check with `assertAlmostEqual` that `estimate_cost(1500, 0.002)` is `0.003`.
+            4. In `test_partial_thousand`, check with `assertAlmostEqual` that `estimate_cost(250, 4.0)` is `1.0`.
+            5. In `test_zero_tokens`, check with `assertAlmostEqual` that `estimate_cost(0, 4.0)` is `0.0` (zero tokens are allowed and cost nothing).
+            6. In `test_negative_tokens_rejected`, use `with self.assertRaises(ValueError):` and call `estimate_cost(-1, 0.002)` inside the block.
+            7. Compare every cost with `assertAlmostEqual`, never `assertEqual`: the checks also run an equivalent implementation whose results differ by less than `0.000000001`.
 
             Expected result:
-            All four tests pass for the supplied estimate_cost and for the equivalent version. Your tests fail for each bug: counting only whole thousands of tokens; charging the rate per token instead of per 1,000; accepting negative tokens; rejecting zero tokens; and raising TypeError instead of ValueError for negative tokens.
+            - All four tests pass for the supplied `estimate_cost` and for the equivalent version.
+            - Your tests fail for a version that counts only whole thousands of tokens.
+            - They fail for a version that charges the rate per token instead of per 1,000.
+            - They fail for a version that accepts negative tokens.
+            - They fail for a version that rejects zero tokens.
+            - They fail for a version that raises `TypeError` instead of `ValueError` for negative tokens.
 
             Check:
-            Choose Check solution. It runs EstimateCostTests against a correct implementation, an equivalent one with tiny float differences (both must pass) and five buggy ones (each must cause a failure or error).
+            Choose **Check solution**. It runs `EstimateCostTests` against a correct implementation, an equivalent one with tiny float differences (both must pass) and five buggy ones (each must cause a failure or error).
             """, """
             import unittest
 
@@ -1164,30 +1517,40 @@ extension Curriculum {
             assert estimate_cost is supplied_cost
             """, [
                 "Three tests compare a returned float with an expected value; one test checks that a call raises. Use a different assertion method for each kind.",
-                "self.assertAlmostEqual(actual, expected) has the same argument order as assertEqual but tolerates tiny rounding differences. For the error, the risky call goes inside an indented with block.",
-                "The error test body is two lines: with self.assertRaises(ValueError): and, indented below it, the estimate_cost call with -1 tokens. Do not wrap that call in assertEqual."
+                "`self.assertAlmostEqual(actual, expected)` has the same argument order as `assertEqual` but tolerates tiny rounding differences. For the error, the risky call goes inside an indented `with` block.",
+                "The error test body is two lines: `with self.assertRaises(ValueError):` and, indented below it, the `estimate_cost` call with `-1` tokens. Do not wrap that call in `assertEqual`."
             ], effort: .init(difficulty: .similar, scopeUnits: 3)),
             exercise("testing-budget-setup", "Test a token budget with setUp", """
             Goal:
-            Test a class: build a fresh object for every test with setUp, and check both successful calls and rejected calls, including that a rejected call leaves the object unchanged.
+            Test a class: build a fresh object for every test with `setUp`, and check both successful calls and rejected calls, including that a rejected call leaves the object unchanged.
 
             Starting code:
-            import unittest is supplied. class TokenBudget is a correct implementation: TokenBudget(limit) starts with used = 0; spend(tokens) raises ValueError when tokens is 0 or negative, raises ValueError when used + tokens would exceed limit (spending exactly up to the limit is allowed), and otherwise adds tokens to used; remaining() returns limit - used. Do not change it. class TokenBudgetTests(unittest.TestCase) has a setUp method and five test methods, all with the placeholder pass.
+            - `import unittest` is supplied.
+            - `class TokenBudget` is a correct implementation. Do not change it.
+            - `TokenBudget(limit)` starts with `used = 0`.
+            - `spend(tokens)` raises `ValueError` when `tokens` is `0` or negative, and raises `ValueError` when `used + tokens` would exceed `limit` (spending exactly up to the limit is allowed). Otherwise it adds `tokens` to `used`.
+            - `remaining()` returns `limit - used`.
+            - `class TokenBudgetTests(unittest.TestCase)` has a `setUp` method and five test methods, all with the placeholder `pass`.
 
             Your task:
-            1. Keep the supplied TokenBudget class with its exact name, and keep the class name TokenBudgetTests and its method names.
-            2. In setUp, save a new budget with a limit of 100 as self.budget = TokenBudget(100), calling the class by the name TokenBudget. Use self.budget in every test. The check temporarily swaps buggy classes in under the name TokenBudget; because setUp runs before each test method, every test then receives a fresh object of the swapped class. Do not build budgets from a renamed copy or outside the test class.
-            3. test_starts_full: remaining() is 100.
-            4. test_spend_reduces_remaining: after spend(30), remaining() is 70.
-            5. test_spending_exact_limit_is_allowed: after spend(100), remaining() is 0.
-            6. test_overspend_rejected_and_unchanged: spend(101) raises ValueError, and afterwards remaining() is still 100.
-            7. test_non_positive_rejected: spend(0) raises ValueError and spend(-5) raises ValueError (use a separate with block for each call).
+            1. Keep the supplied `TokenBudget` class with its exact name, and keep the class name `TokenBudgetTests` and its method names.
+            2. In `setUp`, save a new budget with a limit of 100 as `self.budget = TokenBudget(100)`, calling the class by the name `TokenBudget`. Use `self.budget` in every test. The check temporarily swaps buggy classes in under the name `TokenBudget`; because `setUp` runs before each test method, every test then receives a fresh object of the swapped class. Do not build budgets from a renamed copy or outside the test class.
+            3. In `test_starts_full`, check that `remaining()` is `100`.
+            4. In `test_spend_reduces_remaining`, check that after `spend(30)`, `remaining()` is `70`.
+            5. In `test_spending_exact_limit_is_allowed`, check that after `spend(100)`, `remaining()` is `0`.
+            6. In `test_overspend_rejected_and_unchanged`, check that `spend(101)` raises `ValueError`, and that afterwards `remaining()` is still `100`.
+            7. In `test_non_positive_rejected`, check that `spend(0)` raises `ValueError` and `spend(-5)` raises `ValueError` (use a separate `with` block for each call).
 
             Expected result:
-            All five tests pass for the supplied TokenBudget. They fail for each bug: spending exactly the limit is rejected; a rejected overspend still changes used; zero tokens are accepted; negative tokens are accepted; remaining() ignores spending.
+            - All five tests pass for the supplied `TokenBudget`.
+            - They fail for a class that rejects spending exactly the limit.
+            - They fail for a class where a rejected overspend still changes `used`.
+            - They fail for a class that accepts zero tokens.
+            - They fail for a class that accepts negative tokens.
+            - They fail for a class whose `remaining()` ignores spending.
 
             Check:
-            Choose Check solution. It confirms setUp creates self.budget with limit 100, then runs your tests against a correct budget class (all must pass) and five buggy classes (each must cause a failure).
+            Choose **Check solution**. It confirms `setUp` creates `self.budget` with limit 100, then runs your tests against a correct budget class (all must pass) and five buggy classes (each must cause a failure).
             """, """
             import unittest
 
@@ -1344,9 +1707,9 @@ extension Curriculum {
             assert not run_learner_tests(RemainingIgnoresSpending).wasSuccessful(), "Missed bug: remaining() ignores spending."
             assert TokenBudget is supplied_budget
             """, [
-                "setUp runs before every test, so each test can rely on a brand-new budget with nothing spent. Save it on self so the test methods can reach it.",
-                "Success tests call spend and then compare remaining() with assertEqual. Rejection tests put the spend call inside with self.assertRaises(ValueError): and make any follow-up check after the with block, not inside it.",
-                "For the overspend test, the with block holds self.budget.spend(101); after it, at the method's indentation level, assert that self.budget.remaining() still equals 100. For non-positive amounts write two separate with blocks."
+                "`setUp` runs before every test, so each test can rely on a brand-new budget with nothing spent. Save it on `self` so the test methods can reach it.",
+                "Success tests call `spend` and then compare `remaining()` with `assertEqual`. Rejection tests put the `spend` call inside `with self.assertRaises(ValueError):` and make any follow-up check after the `with` block, not inside it.",
+                "For the overspend test, the `with` block holds `self.budget.spend(101)`; after it, at the method's indentation level, assert that `self.budget.remaining()` still equals `100`. For non-positive amounts write two separate `with` blocks."
             ], effort: .init(difficulty: .harder, scopeUnits: 3))
         ],
         assessment: exercise("testing-assessment", "Test a latency tracker", """
@@ -1354,22 +1717,33 @@ extension Curriculum {
         Write a complete unittest test case for a latency tracker so that it passes for correct implementations and catches typical bugs.
 
         Starting code:
-        import unittest is supplied. class LatencyTracker is a correct implementation: LatencyTracker(slow_threshold) starts with an empty readings list; record(ms) raises ValueError when ms is negative (0 is allowed) and otherwise appends ms; average() raises ValueError when there are no readings and otherwise returns the mean of the readings; slow_count() returns how many readings are greater than or equal to slow_threshold. Do not change it. class LatencyTrackerTests(unittest.TestCase) has a setUp method and four test methods containing pass.
+        - `import unittest` is supplied.
+        - `class LatencyTracker` is a correct implementation. Do not change it.
+        - `LatencyTracker(slow_threshold)` starts with an empty `readings` list.
+        - `record(ms)` raises `ValueError` when `ms` is negative (`0` is allowed) and otherwise appends `ms`.
+        - `average()` raises `ValueError` when there are no readings, and otherwise returns the mean of the readings.
+        - `slow_count()` returns how many readings are greater than or equal to `slow_threshold`.
+        - `class LatencyTrackerTests(unittest.TestCase)` has a `setUp` method and four test methods containing the placeholder `pass`.
 
         Your task:
-        1. Keep the supplied LatencyTracker class with its exact name, and keep the class name LatencyTrackerTests and its method names.
-        2. In setUp, save self.tracker = LatencyTracker(500), calling the class by the name LatencyTracker, and use self.tracker in every test. The check temporarily swaps buggy classes in under the name LatencyTracker; because setUp runs before each test method, every test then receives a fresh object of the swapped class. Do not build trackers from a renamed copy or outside the test class.
-        3. test_average_of_readings: record 100, 200 and 400, then check with assertAlmostEqual that average() is 700 / 3.
-        4. test_empty_average_rejected: check with assertRaises that average() raises ValueError when nothing was recorded.
-        5. test_negative_rejected_zero_allowed: check that record(-1) raises ValueError; then record(0) and check with assertAlmostEqual that average() is 0.0.
-        6. test_slow_count_boundary: record 499, 500 and 501, then check with assertEqual that slow_count() is 2.
-        7. Compare averages only with assertAlmostEqual: an equivalent implementation whose averages differ by less than 0.000000001 must also pass.
+        1. Keep the supplied `LatencyTracker` class with its exact name, and keep the class name `LatencyTrackerTests` and its method names.
+        2. In `setUp`, save `self.tracker = LatencyTracker(500)`, calling the class by the name `LatencyTracker`, and use `self.tracker` in every test. The check temporarily swaps buggy classes in under the name `LatencyTracker`; because `setUp` runs before each test method, every test then receives a fresh object of the swapped class. Do not build trackers from a renamed copy or outside the test class.
+        3. In `test_average_of_readings`, record `100`, `200` and `400`, then check with `assertAlmostEqual` that `average()` is `700 / 3`.
+        4. In `test_empty_average_rejected`, check with `assertRaises` that `average()` raises `ValueError` when nothing was recorded.
+        5. In `test_negative_rejected_zero_allowed`, check that `record(-1)` raises `ValueError`; then `record(0)` and check with `assertAlmostEqual` that `average()` is `0.0`.
+        6. In `test_slow_count_boundary`, record `499`, `500` and `501`, then check with `assertEqual` that `slow_count()` is `2`.
+        7. Compare averages only with `assertAlmostEqual`: an equivalent implementation whose averages differ by less than `0.000000001` must also pass.
 
         Expected result:
-        All four tests pass for the supplied tracker and for the equivalent version. They fail for each bug: whole-number division in average(); average() returning 0.0 instead of raising for no readings; negative readings accepted; a reading of 0 rejected; slow readings counted only when strictly greater than the threshold.
+        - All four tests pass for the supplied tracker and for the equivalent version.
+        - They fail for a tracker that uses whole-number division in `average()`.
+        - They fail for a tracker whose `average()` returns `0.0` instead of raising when there are no readings.
+        - They fail for a tracker that accepts negative readings.
+        - They fail for a tracker that rejects a reading of `0`.
+        - They fail for a tracker that counts slow readings only when they are strictly greater than the threshold.
 
         Check:
-        Complete the theory questions and written explanation, then choose Submit assessment. It confirms setUp creates the tracker, then runs your tests against correct, equivalent and five buggy trackers. Work independently; hints and solutions are unavailable.
+        Complete the theory questions and written explanation, then choose **Submit assessment**. It confirms `setUp` creates the tracker, then runs your tests against correct, equivalent and five buggy trackers. Work independently; hints and solutions are unavailable.
         """, """
         import unittest
 

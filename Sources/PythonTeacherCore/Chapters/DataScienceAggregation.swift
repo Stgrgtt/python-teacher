@@ -7,13 +7,41 @@ extension Curriculum {
         lesson: """
         # Turn rows into summaries
 
-        Cleaned data is usually a **table**: a list of rows, where each row is a dictionary with the same field names. Statistics describe one column. Most real questions, though, are about categories: *Which label appears most often? What is the mean latency for each model? How many tokens did each team use per day?* Answering them means **aggregating**: collapsing many rows into one summary value per category.
+        Cleaned data is usually a **table**: a list of rows, where each row is a dictionary with the same field names.
 
-        This chapter builds those summaries with Python's standard library only. Later, the pandas library automates the same ideas: `value_counts` counts categories, `groupby` groups rows, `merge` joins tables, `pivot_table` builds pivot summaries, and `nlargest` picks the top rows. Knowing how to do each step by hand makes those tools far less mysterious. All data here is invented.
+        Statistics describe one column. Most real questions, though, are about categories:
+
+        - *Which label appears most often?*
+        - *What is the mean latency for each model?*
+        - *How many tokens did each team use per day?*
+
+        Answering them means **aggregating**: collapsing many rows into one summary value per category.
+
+        This chapter builds those summaries with Python's standard library only. Later, the pandas library automates the same ideas:
+
+        - `value_counts` counts categories.
+        - `groupby` groups rows.
+        - `merge` joins tables.
+        - `pivot_table` builds pivot summaries.
+        - `nlargest` picks the top rows.
+
+        Knowing how to do each step by hand makes those tools far less mysterious.
+
+        > **Note:** All data in this chapter is invented.
 
         ## Count categories with Counter and pick the top n
 
-        The `collections` module (part of Python, nothing to install) contains specialised containers. Despite the similar name, it has nothing to do with the earlier chapter called "Collections and JSON" beyond the word itself: that chapter taught built-in containers such as lists and dictionaries, while `collections` is a separate standard-library module you must import before use. `from collections import Counter` makes its **Counter** available. `Counter(items)` visits every item of a list and builds a dictionary-like object mapping each distinct item to how many times it appears. Reading a missing key from a Counter gives 0 instead of a KeyError. `counts.most_common(n)` returns a list of the n most frequent `(item, count)` tuples, largest count first.
+        ### Import Counter
+
+        The `collections` module contains specialised containers. It is part of Python, so there is nothing to install.
+
+        > **Watch out:** Despite the similar name, the `collections` module has nothing to do with the earlier chapter called "Collections and JSON" beyond the word itself. That chapter taught built-in containers such as lists and dictionaries, while `collections` is a separate standard-library module you must import before use.
+
+        The line `from collections import Counter` makes its **Counter** available. A Counter works like this:
+
+        - `Counter(items)` visits every item of a list and builds a dictionary-like object mapping each distinct item to how many times it appears.
+        - Reading a missing key from a Counter gives `0` instead of a `KeyError`.
+        - `counts.most_common(n)` returns a list of the n most frequent `(item, count)` tuples, largest count first.
 
         ```python
         from collections import Counter
@@ -27,9 +55,33 @@ extension Curriculum {
         assert counts["embed"] == 2
         ```
 
-        This prints `Counter({'chat': 3, 'embed': 2, 'vision': 1})`, then `3`, then `0` (audio never appeared), then `[('chat', 3), ('embed', 2)]`. A Counter can also grow one item at a time: `counts[label] += 1` works even for a brand-new label, because the missing count starts at 0. A Counter compares equal to an ordinary dictionary with the same contents.
+        ```text
+        Counter({'chat': 3, 'embed': 2, 'vision': 1})
+        3
+        0
+        [('chat', 3), ('embed', 2)]
+        ```
 
-        A **top-n** list means the n categories with the largest values. `most_common` settles ties by the order items were first seen, which depends on input order. When a task needs a predictable tie rule, sort the counter's pairs yourself. `counts.items()` gives every `(key, value)` pair. As in the collections chapter, `sorted` with a `key` function and a tuple key gives a primary and a secondary rule; negating the count puts large counts first. A slice `[:n]` then keeps at most the first n items (and simply returns everything when fewer exist; `[:0]` is empty).
+        - The first line shows every label with its count.
+        - `counts["chat"]` is `3`.
+        - `counts["audio"]` is `0`, because audio never appeared.
+        - `most_common(2)` gives the two most frequent pairs.
+
+        A Counter can also grow one item at a time. `counts[label] += 1` works even for a brand-new label, because the missing count starts at 0.
+
+        A Counter compares equal to an ordinary dictionary with the same contents.
+
+        ### Pick the top n with a predictable tie rule
+
+        A **top-n** list means the n categories with the largest values.
+
+        `most_common` settles ties by the order items were first seen, which depends on input order. When a task needs a predictable tie rule, sort the counter's pairs yourself:
+
+        1. `counts.items()` gives every `(key, value)` pair.
+        2. `sorted` with a `key` function and a tuple key gives a primary and a secondary rule, as in the collections chapter. Negating the count puts large counts first.
+        3. A slice `[:n]` then keeps at most the first n items.
+
+        A slice never fails for being too long: it simply returns everything when fewer items exist, and `[:0]` is empty.
 
         ```python
         from collections import Counter
@@ -42,11 +94,29 @@ extension Curriculum {
         assert ranked[:10] == [("nova", 2), ("orbit", 2), ("atlas", 1), ("zest", 1)]
         ```
 
-        This prints `[('nova', 2), ('orbit', 2)]`. In the lambda, `pair[1]` is the count and `pair[0]` is the label, so equal counts fall back to ascending label order.
+        ```text
+        [('nova', 2), ('orbit', 2)]
+        ```
+
+        - In the lambda, `pair[1]` is the count and `pair[0]` is the label.
+        - The key `(-pair[1], pair[0])` sorts by count, largest first.
+        - Equal counts fall back to ascending label order, so `nova` comes before `orbit`.
+
+        > **Key idea:** For a top-n list you can rely on, sort with an explicit tuple key, then slice.
 
         ## Group rows with defaultdict
 
-        **Group-by** means: split rows into groups that share a key value, then compute one summary per group. A **defaultdict** is a dictionary that creates a starting value the first time a missing key is used. `defaultdict(list)` starts each new key with an empty list; `defaultdict(int)` starts each new key with 0 (calling `int()` returns 0). You pass the type itself, without parentheses after it.
+        **Group-by** means: split rows into groups that share a key value, then compute one summary per group.
+
+        ### Meet defaultdict
+
+        A **defaultdict** is a dictionary that creates a starting value the first time a missing key is used.
+
+        - `defaultdict(list)` starts each new key with an empty list.
+        - `defaultdict(int)` starts each new key with 0, because calling `int()` returns 0.
+        - You pass the type itself, without parentheses after it.
+
+        ### Collect, then summarise
 
         ```python
         from collections import defaultdict
@@ -68,13 +138,31 @@ extension Curriculum {
         assert means == {"orbit": 130, "nova": 95}
         ```
 
-        This prints `{'orbit': [120, 140], 'nova': [95]}`, then `{'orbit': 130, 'nova': 95}`. Step one collects each group's values; step two applies any statistic you already know (`mean`, `median`, `len`, `sum`) to each list. `dict(groups)` copies a defaultdict into an ordinary dictionary, which prints more simply and stops creating keys by accident. When you only need a running total, `totals = defaultdict(int)` followed by `totals[key] += amount` skips the list entirely.
+        ```text
+        {'orbit': [120, 140], 'nova': [95]}
+        {'orbit': 130, 'nova': 95}
+        ```
 
-        Be careful: merely *reading* `groups["missing"]` on a defaultdict inserts that key with an empty starting value. Use `.get(key)` or `key in groups` when you only want to look.
+        The work happens in two steps:
+
+        1. Collect each group's values into a list.
+        2. Apply any statistic you already know (`mean`, `median`, `len`, `sum`) to each list.
+
+        `dict(groups)` copies a defaultdict into an ordinary dictionary. The copy prints more simply and stops creating keys by accident.
+
+        When you only need a running total, `totals = defaultdict(int)` followed by `totals[key] += amount` skips the list entirely.
+
+        > **Watch out:** Merely *reading* `groups["missing"]` on a defaultdict inserts that key with an empty starting value. Use `.get(key)` or `key in groups` when you only want to look.
 
         ## Group by several keys and build a pivot summary
 
-        Sometimes a group is defined by two fields together, such as model *and* day. Tuples can be dictionary keys because they cannot change, so `(row["model"], row["day"])` works as one combined key. This is **multi-key grouping**. In a `for` loop, `(model, day), total` unpacks each item's tuple key and its value in one step.
+        ### Multi-key grouping
+
+        Sometimes a group is defined by two fields together, such as model *and* day.
+
+        Tuples can be dictionary keys because they cannot change, so `(row["model"], row["day"])` works as one combined key. This is **multi-key grouping**.
+
+        In a `for` loop, `(model, day), total` unpacks each item's tuple key and its value in one step.
 
         ```python
         from collections import defaultdict
@@ -95,9 +183,29 @@ extension Curriculum {
         assert totals[("orbit", "mon")] == 1500
         ```
 
-        The first print shows `{('orbit', 'mon'): 1500, ('orbit', 'tue'): 800, ('nova', 'mon'): 500}`. The loop prints `nova mon 500`, `orbit mon 1500` and `orbit tue 800`, because tuples sort by their first part, then their second.
+        ```text
+        {('orbit', 'mon'): 1500, ('orbit', 'tue'): 800, ('nova', 'mon'): 500}
+        nova mon 500
+        orbit mon 1500
+        orbit tue 800
+        ```
 
-        A **pivot summary** (or pivot table) rearranges such results into a grid: one row per value of the first key, one column per value of the second key, and the aggregate in each cell. In plain Python it is a dictionary of dictionaries. A combination with no rows still needs a cell, usually filled with 0, so every row has the same columns. A set comprehension such as `{row["day"] for row in rows}` collects each distinct value once; sorting it gives stable column order.
+        - The first line shows one total per `(model, day)` pair. The two orbit/mon rows were added together.
+        - The loop prints in sorted order, because tuples sort by their first part, then their second.
+
+        ### Pivot summaries
+
+        A **pivot summary** (or pivot table) rearranges such results into a grid:
+
+        - one row per value of the first key,
+        - one column per value of the second key,
+        - the aggregate in each cell.
+
+        In plain Python it is a dictionary of dictionaries.
+
+        A combination with no rows still needs a cell, usually filled with 0, so every row has the same columns.
+
+        A set comprehension such as `{row["day"] for row in rows}` collects each distinct value once. Sorting it gives a stable column order.
 
         ```python
         rows = [
@@ -118,13 +226,34 @@ extension Curriculum {
         assert pivot["nova"]["tue"] == 0
         ```
 
-        This prints `{'nova': {'mon': 500, 'tue': 0}, 'orbit': {'mon': 1500, 'tue': 800}}`. First every cell is created with 0, then each row adds to its own cell. pandas calls this `pivot_table(..., fill_value=0)`.
+        ```text
+        {'nova': {'mon': 500, 'tue': 0}, 'orbit': {'mon': 1500, 'tue': 800}}
+        ```
+
+        1. First every cell is created with 0.
+        2. Then each row adds to its own cell.
+
+        nova never ran on tue, yet its `tue` cell exists with 0. pandas calls this `pivot_table(..., fill_value=0)`.
 
         ## Join two tables by key
 
-        Information is often split across tables: runs record a `model_id`, while a separate model table records each model's name. **Joining** combines rows from two tables whose **key** field matches. An **inner join** keeps only rows that found a match. A **left join** keeps every row of the first (left) table and fills in a marker such as None or `'unassigned'` when no match exists. Rows without a partner are called **unmatched rows**; reporting them is how you notice typos and missing reference data.
+        Information is often split across tables. For example, runs record a `model_id`, while a separate model table records each model's name.
 
-        The efficient technique is an **index**: first build a dictionary from key to row for the lookup table, then visit the main table once and look each key up. `.get(key)` returns None when the key is absent, and `.get(key, default)` returns your chosen default instead.
+        **Joining** combines rows from two tables whose **key** field matches. There are two common kinds:
+
+        - An **inner join** keeps only rows that found a match.
+        - A **left join** keeps every row of the first (left) table and fills in a marker such as `None` or `'unassigned'` when no match exists.
+
+        Rows without a partner are called **unmatched rows**. Reporting them is how you notice typos and missing reference data.
+
+        ### Build an index, then look up
+
+        The efficient technique is an **index**:
+
+        1. Build a dictionary from key to row for the lookup table.
+        2. Visit the main table once and look each key up.
+
+        `.get(key)` returns `None` when the key is absent, and `.get(key, default)` returns your chosen default instead.
 
         ```python
         runs = [
@@ -156,13 +285,49 @@ extension Curriculum {
         assert unused == ["m3"]
         ```
 
-        The joined list keeps all three runs in their original order; run r2 has name None because m9 is not in the model table, so this is a left join. Skipping rows whose match is None would make it an inner join. `set(by_id)` is the set of index keys, and `-` between two sets gives the items in the first set but not the second, so `unused` lists models no run referred to: `['m3']`. This pattern assumes each key appears at most once in the lookup table; a repeated key would overwrite the earlier entry. pandas calls this `merge(..., how="left")`.
+        ```text
+        [{'run_id': 'r1', 'name': 'orbit', 'tokens': 900}, {'run_id': 'r2', 'name': None, 'tokens': 400}, {'run_id': 'r3', 'name': 'nova', 'tokens': 650}]
+        ['m3']
+        ```
+
+        - The joined list keeps all three runs in their original order.
+        - Run r2 has name `None` because m9 is not in the model table, so this is a left join.
+        - Skipping rows whose match is `None` would make it an inner join.
+        - `set(by_id)` is the set of index keys. `-` between two sets gives the items in the first set but not the second.
+        - So `unused` lists models no run referred to: `['m3']`.
+
+        pandas calls this `merge(..., how="left")`.
+
+        > **Watch out:** This pattern assumes each key appears at most once in the lookup table. A repeated key would overwrite the earlier entry.
 
         ## Dataclass records and formatted reports
 
-        Dictionaries with string keys are easy to mistype. For summary rows with a fixed shape, a dataclass (from the classes chapter) gives named fields, a readable repr, and field-by-field `==` comparison. `from dataclasses import dataclass` makes the decorator available; each annotated line inside the class becomes a field, and calling the class with values in field order creates a record.
+        ### Dataclass records
 
-        Reports then turn numbers into aligned text. Inside an f-string, a **format spec** after a colon controls how a value is shown: `{value:.2f}` shows exactly two decimal places, `{value:,}` adds thousands separators, `{text:>8}` right-aligns in a column 8 characters wide, and `{text:<8}` left-aligns (pads on the right). Specs combine in this order: alignment, width, comma, precision, as in `{value:>10,.2f}`. A value longer than its width is not cut off; the column just grows. Formatting produces text and never changes the number itself. To keep a *number* with two decimals, use `round(value, 2)`; for example `round(130.456, 2)` gives `130.46`.
+        Dictionaries with string keys are easy to mistype. For summary rows with a fixed shape, a dataclass (from the classes chapter) gives you:
+
+        - named fields,
+        - a readable repr,
+        - field-by-field `==` comparison.
+
+        `from dataclasses import dataclass` makes the decorator available. Each annotated line inside the class becomes a field, and calling the class with values in field order creates a record.
+
+        ### Format specs
+
+        Reports turn numbers into aligned text. Inside an f-string, a **format spec** after a colon controls how a value is shown:
+
+        - `{value:.2f}` shows exactly two decimal places.
+        - `{value:,}` adds thousands separators.
+        - `{text:>8}` right-aligns in a column 8 characters wide.
+        - `{text:<8}` left-aligns (pads on the right).
+
+        Specs combine in this order: alignment, width, comma, precision, as in `{value:>10,.2f}`.
+
+        A value longer than its width is not cut off; the column just grows.
+
+        > **Remember:** Formatting produces text and never changes the number itself. To keep a *number* with two decimals, use `round(value, 2)`; for example `round(130.456, 2)` gives `130.46`.
+
+        ### A small report
 
         ```python
         from dataclasses import dataclass
@@ -183,7 +348,16 @@ extension Curriculum {
         assert round(130.456, 2) == 130.46
         ```
 
-        The first line prints `3.14 1,234,567 [   ab] [ab   ]`. The report lines are `orbit   | 1,234,567|  130.46` and `nova    |       980|   95.00`: names padded to 8 characters, token counts right-aligned in 10 with commas, and means right-aligned in 8 with two decimals.
+        ```text
+        3.14 1,234,567 [   ab] [ab   ]
+        orbit   | 1,234,567|  130.46
+        nova    |       980|   95.00
+        ```
+
+        - The first line shows each spec on its own.
+        - In the report lines, names are padded to 8 characters.
+        - Token counts are right-aligned in 10 with commas.
+        - Means are right-aligned in 8 with two decimals.
 
         ## Common mistakes and debugging
 
@@ -191,33 +365,52 @@ extension Curriculum {
         - **Unpredictable ties.** `most_common` and set iteration do not give a tie rule you control. Sort with an explicit tuple key.
         - **Accidental keys.** Reading a missing key on a defaultdict inserts it. Use `.get` to look without changing anything.
         - **Ragged pivots.** If some cells are missing, rows have different columns. Create every cell first, then fill it.
-        - **Exact float comparisons.** Means such as `0.1 + 0.2` are not exactly `0.3`; round results when the task says to, and compare with a tolerance like `abs(a - b) < 1e-9` in tests.
-        - **Format specs on the wrong type.** `:,` and `:.2f` need numbers; applying `:.2f` to the text `'3.5'` raises ValueError. Convert first.
+        - **Exact float comparisons.** Means such as `0.1 + 0.2` are not exactly `0.3`. Round results when the task says to, and compare with a tolerance like `abs(a - b) < 1e-9` in tests.
+        - **Format specs on the wrong type.** `:,` and `:.2f` need numbers; applying `:.2f` to the text `'3.5'` raises `ValueError`. Convert first.
 
-        To debug, print one intermediate structure at a time: the counter, the groups, the index dictionary, then the final rows. Check an empty table, a single row, a key that appears only on one side of a join, and a tie.
+        ### How to debug
+
+        Print one intermediate structure at a time:
+
+        1. the counter,
+        2. the groups,
+        3. the index dictionary,
+        4. then the final rows.
+
+        Then test the edge cases:
+
+        - an empty table,
+        - a single row,
+        - a key that appears only on one side of a join,
+        - a tie.
         """,
         exercises: [
             exercise("ds-aggregation-top-labels", "Rank the most frequent labels", """
             Goal:
-            Find the most common labels in an invented list of task labels and return the top n, with a predictable rule for ties. A top-n list holds the n categories with the largest counts.
+            Find the most common labels in an invented list of task labels and return the top n, with a predictable rule for ties. A **top-n** list holds the n categories with the largest counts.
 
             Starting code:
-            from collections import Counter is supplied. def top_labels(labels, n): is the required function. return [] is a placeholder: replace that line with your own body.
+            - `from collections import Counter` is supplied. Keep it.
+            - `def top_labels(labels, n):` is the required function. Keep its name and both parameters.
+            - `return []` is a placeholder. Replace that line with your own body.
 
             Your task:
-            1. Keep the import, the function name and both parameters. labels is a list of strings; n is a nonnegative integer. Leave the labels list unchanged.
-            2. Count how often each exact label appears (case and spaces matter). Counter is the intended tool.
-            3. Return a list of (label, count) tuples ordered by count from largest to smallest. When counts are equal, order those labels in Python's normal ascending string order.
-            4. Return at most n tuples. If there are fewer distinct labels than n, return them all. n equal to 0 returns []. An empty labels list returns [].
+            1. Keep the import, the function name and both parameters. `labels` is a list of strings; `n` is a nonnegative integer.
+            2. Leave the `labels` list unchanged.
+            3. Count how often each exact label appears. Case and spaces matter. `Counter` is the intended tool.
+            4. Order the `(label, count)` tuples by count, from largest to smallest.
+            5. When counts are equal, order those labels in Python's normal ascending string order.
+            6. Return a list of at most `n` tuples. If there are fewer distinct labels than `n`, return them all.
+            7. `n` equal to `0` returns `[]`. An empty `labels` list returns `[]`.
 
             Expected result:
-            For labels ['chat', 'embed', 'chat', 'vision', 'embed', 'chat', 'audio']:
-            top_labels(labels, 2) returns [('chat', 3), ('embed', 2)].
-            top_labels(labels, 10) returns [('chat', 3), ('embed', 2), ('audio', 1), ('vision', 1)].
-            top_labels(['b', 'a', 'B', 'a', 'b'], 2) returns [('a', 2), ('b', 2)].
+            For `labels = ['chat', 'embed', 'chat', 'vision', 'embed', 'chat', 'audio']`:
+            - `top_labels(labels, 2)` returns `[('chat', 3), ('embed', 2)]`
+            - `top_labels(labels, 10)` returns `[('chat', 3), ('embed', 2), ('audio', 1), ('vision', 1)]`
+            - `top_labels(['b', 'a', 'B', 'a', 'b'], 2)` returns `[('a', 2), ('b', 2)]`
 
             Check:
-            Choose Check solution. It checks empty input, ties, n larger than the number of labels, n equal to 0, case-sensitive labels and unchanged input. Return the list of tuples; printing is optional.
+            Choose **Check solution**. It checks empty input, ties, `n` larger than the number of labels, `n` equal to `0`, case-sensitive labels and unchanged input. Return the list of tuples; printing is optional.
             """,
                      """
                      from collections import Counter
@@ -250,21 +443,36 @@ extension Curriculum {
             Summarise invented token-usage rows in two shapes: totals grouped by the pair (model, day), and a pivot summary with one row per model and one column per day. Tokens are counted units of text.
 
             Starting code:
-            from collections import defaultdict is supplied. def pair_totals(rows): and def token_pivot(rows): both currently return {} as placeholders. Replace each placeholder body.
+            - `from collections import defaultdict` is supplied. Keep it.
+            - `def pair_totals(rows):` currently returns `{}` as a placeholder. Replace that body.
+            - `def token_pivot(rows):` currently returns `{}` as a placeholder. Replace that body too.
 
             Your task:
-            1. Keep both function names and parameters. rows is a list of dictionaries, each with a string 'model', a string 'day' and a nonnegative integer 'tokens'. Do not change the list or its dictionaries.
-            2. pair_totals(rows) returns a dictionary whose keys are (model, day) tuples and whose values are the total tokens of all rows with that model and day. Every pair that appears in any row has a key, even if its total is 0. A defaultdict(int) is a suitable accumulator; returning it directly or as dict(...) are both fine.
-            3. token_pivot(rows) returns a dictionary mapping each model to an inner dictionary that maps each day to that pair's total. Every model must have a cell for every day that appears anywhere in rows; fill pairs that never appear with 0. You may call pair_totals inside token_pivot.
-            4. An empty rows list returns {} from both functions. Key order is not important.
+            1. Keep both function names and parameters. `rows` is a list of dictionaries, each with a string `'model'`, a string `'day'` and a nonnegative integer `'tokens'`.
+            2. Do not change the list or its dictionaries.
+            3. `pair_totals(rows)` returns a dictionary whose keys are `(model, day)` tuples and whose values are the total tokens of all rows with that model and day.
+            4. In `pair_totals`, every pair that appears in any row has a key, even if its total is `0`. A `defaultdict(int)` is a suitable accumulator; returning it directly or as `dict(...)` are both fine.
+            5. `token_pivot(rows)` returns a dictionary mapping each model to an inner dictionary that maps each day to that pair's total. You may call `pair_totals` inside `token_pivot`.
+            6. In `token_pivot`, every model must have a cell for every day that appears anywhere in `rows`. Fill pairs that never appear with `0`.
+            7. An empty `rows` list returns `{}` from both functions. Key order is not important.
 
             Expected result:
-            For rows [{'model': 'orbit', 'day': 'mon', 'tokens': 1200}, {'model': 'nova', 'day': 'tue', 'tokens': 500}, {'model': 'orbit', 'day': 'mon', 'tokens': 300}, {'model': 'orbit', 'day': 'tue', 'tokens': 0}]:
-            pair_totals(rows) returns {('orbit', 'mon'): 1500, ('nova', 'tue'): 500, ('orbit', 'tue'): 0}.
-            token_pivot(rows) returns {'orbit': {'mon': 1500, 'tue': 0}, 'nova': {'mon': 0, 'tue': 500}}.
+            For these rows:
+
+            ```python
+            rows = [
+                {'model': 'orbit', 'day': 'mon', 'tokens': 1200},
+                {'model': 'nova', 'day': 'tue', 'tokens': 500},
+                {'model': 'orbit', 'day': 'mon', 'tokens': 300},
+                {'model': 'orbit', 'day': 'tue', 'tokens': 0},
+            ]
+            ```
+
+            - `pair_totals(rows)` returns `{('orbit', 'mon'): 1500, ('nova', 'tue'): 500, ('orbit', 'tue'): 0}`
+            - `token_pivot(rows)` returns `{'orbit': {'mon': 1500, 'tue': 0}, 'nova': {'mon': 0, 'tue': 500}}`
 
             Check:
-            Choose Check solution. It checks empty input, repeated pairs, zero totals, missing cells filled with 0, a single row and unchanged input. Return dictionaries, not printed tables.
+            Choose **Check solution**. It checks empty input, repeated pairs, zero totals, missing cells filled with `0`, a single row and unchanged input. Return dictionaries, not printed tables.
             """,
                      """
                      from collections import defaultdict
@@ -317,20 +525,35 @@ extension Curriculum {
             Combine two invented tables with a left join and format each joined record as a fixed-width report line. The runs table records which model each run used; the owners table records which team owns each model.
 
             Starting code:
-            The supplied @dataclass UsageLine has the fields run_id (str), team (str) and tokens (int); keep it unchanged. def join_usage(runs, owners): returns [] and def usage_label(line): returns '' as placeholders. Replace both bodies.
+            - The supplied `@dataclass UsageLine` has the fields `run_id` (`str`), `team` (`str`) and `tokens` (`int`). Keep it unchanged.
+            - `def join_usage(runs, owners):` returns `[]` as a placeholder. Replace that body.
+            - `def usage_label(line):` returns `''` as a placeholder. Replace that body too.
 
             Your task:
-            1. runs is a list of dictionaries with string 'run_id', string 'model' and nonnegative integer 'tokens'. owners is a list of dictionaries with string 'model' and string 'team'; each model appears at most once in owners. Do not change either list.
-            2. join_usage(runs, owners) returns a list with one UsageLine per run, in the same order as runs. team is the team that owns the run's model. A run whose model has no owner is an unmatched row: keep it, with team 'unassigned'. Owners that no run uses are ignored. Empty runs returns [].
-            3. usage_label(line) returns one string built from a UsageLine: run_id left-aligned in width 6, then team right-aligned in width 10, then tokens right-aligned in width 9 with thousands separators, then a space and, in parentheses, tokens divided by 1000 with exactly two decimals followed by k. In f-string terms: run_id with :<6, team with :>10, tokens with :>9, and tokens / 1000 with :.2f.
+            1. Read the inputs: `runs` is a list of dictionaries with string `'run_id'`, string `'model'` and nonnegative integer `'tokens'`. `owners` is a list of dictionaries with string `'model'` and string `'team'`; each model appears at most once in `owners`.
+            2. Do not change either list.
+            3. `join_usage(runs, owners)` returns a list with one `UsageLine` per run, in the same order as `runs`. `team` is the team that owns the run's model.
+            4. A run whose model has no owner is an unmatched row: keep it, with team `'unassigned'`. Owners that no run uses are ignored. Empty `runs` returns `[]`.
+            5. `usage_label(line)` returns one string built from a `UsageLine`. It joins the four pieces in steps 6–9 in order, with no extra characters between them.
+            6. First `run_id` left-aligned in width 6 (`:<6`).
+            7. Then `team` right-aligned in width 10 (`:>10`).
+            8. Then `tokens` right-aligned in width 9 with thousands separators (`:>9,`).
+            9. Then a space and, in parentheses, `tokens / 1000` with exactly two decimals (`:.2f`) followed by `k`.
 
             Expected result:
-            For runs [{'run_id': 'r1', 'model': 'orbit', 'tokens': 12500}, {'run_id': 'r2', 'model': 'ghost', 'tokens': 40}] and owners [{'model': 'orbit', 'team': 'vision'}, {'model': 'atlas', 'team': 'audio'}], join_usage returns [UsageLine('r1', 'vision', 12500), UsageLine('r2', 'unassigned', 40)].
-            usage_label(UsageLine('r1', 'vision', 12500)) returns 'r1        vision   12,500 (12.50k)'.
-            usage_label(UsageLine('r2', 'unassigned', 40)) returns 'r2    unassigned       40 (0.04k)'.
+            For these inputs:
+
+            ```python
+            runs = [{'run_id': 'r1', 'model': 'orbit', 'tokens': 12500}, {'run_id': 'r2', 'model': 'ghost', 'tokens': 40}]
+            owners = [{'model': 'orbit', 'team': 'vision'}, {'model': 'atlas', 'team': 'audio'}]
+            ```
+
+            - `join_usage(runs, owners)` returns `[UsageLine('r1', 'vision', 12500), UsageLine('r2', 'unassigned', 40)]`
+            - `usage_label(UsageLine('r1', 'vision', 12500))` returns `'r1        vision   12,500 (12.50k)'`
+            - `usage_label(UsageLine('r2', 'unassigned', 40))` returns `'r2    unassigned       40 (0.04k)'`
 
             Check:
-            Choose Check solution. It checks empty runs, an empty owners table, unmatched runs, run order, unused owners, exact label text including long numbers, and unchanged inputs.
+            Choose **Check solution**. It checks empty runs, an empty owners table, unmatched runs, run order, unused owners, exact label text including long numbers, and unchanged inputs.
             """,
                      """
                      from dataclasses import dataclass
@@ -390,25 +613,41 @@ extension Curriculum {
         ],
         assessment: exercise("ds-aggregation-assessment", "Report mean scores by provider", """
         Goal:
-        Build a ranked provider report from two invented tables. The evaluations table holds one score per evaluation run of a model; the models table says which provider (company) supplies each model. You will join the tables, group by provider, keep the top n, and format report lines.
+        Build a ranked provider report from two invented tables. The evaluations table holds one score per evaluation run of a model; the models table says which provider (company) supplies each model.
+
+        You will join the tables, group by provider, keep the top n, and format report lines.
 
         Starting code:
-        from collections import defaultdict and from dataclasses import dataclass are supplied. The @dataclass ProviderSummary has the fields provider (str), runs (int) and mean_score (float); keep it unchanged. def summarize_providers(evaluations, models, n): returns [] and def report_line(summary): returns '' as placeholders. Replace both bodies.
+        - `from collections import defaultdict` and `from dataclasses import dataclass` are supplied. Keep them.
+        - The `@dataclass ProviderSummary` has the fields `provider` (`str`), `runs` (`int`) and `mean_score` (`float`). Keep it unchanged.
+        - `def summarize_providers(evaluations, models, n):` returns `[]` as a placeholder. Replace that body.
+        - `def report_line(summary):` returns `''` as a placeholder. Replace that body too.
 
         Your task:
-        1. evaluations is a list of dictionaries with string 'model' and numeric 'score'. models is a list of dictionaries with string 'model' and string 'provider'; each model appears at most once. n is a nonnegative integer. Do not change the inputs.
-        2. Join each evaluation to its provider by model. An evaluation whose model is not in models is unmatched: count it under the provider 'unknown'. Providers with no evaluations do not appear in the result.
-        3. For each provider, create one ProviderSummary with runs equal to its number of evaluations and mean_score equal to the arithmetic mean of its scores rounded with round(value, 2).
-        4. Order the summaries by mean_score from highest to lowest (using the rounded value); for equal mean_score order by provider in ascending string order. Return a list of at most n summaries. Empty evaluations or n equal to 0 returns [].
-        5. report_line(summary) returns provider left-aligned in width 10, then runs right-aligned in width 6 with thousands separators, then mean_score right-aligned in width 8 with exactly two decimals.
+        1. Read the inputs: `evaluations` is a list of dictionaries with string `'model'` and numeric `'score'`. `models` is a list of dictionaries with string `'model'` and string `'provider'`; each model appears at most once. `n` is a nonnegative integer.
+        2. Do not change the inputs.
+        3. Join each evaluation to its provider by model. An evaluation whose model is not in `models` is unmatched: count it under the provider `'unknown'`.
+        4. Providers with no evaluations do not appear in the result.
+        5. For each provider, create one `ProviderSummary`. `runs` is its number of evaluations. `mean_score` is the arithmetic mean of its scores, rounded with `round(value, 2)`.
+        6. Order the summaries by `mean_score` from highest to lowest, using the rounded value. For equal `mean_score`, order by `provider` in ascending string order.
+        7. Return a list of at most `n` summaries. Empty `evaluations` or `n` equal to `0` returns `[]`.
+        8. `report_line(summary)` returns `provider` left-aligned in width 10, then `runs` right-aligned in width 6 with thousands separators, then `mean_score` right-aligned in width 8 with exactly two decimals.
 
         Expected result:
-        With models [{'model': 'orbit', 'provider': 'acme'}, {'model': 'nova', 'provider': 'zenith'}, {'model': 'atlas', 'provider': 'acme'}] and evaluations with scores orbit 0.9, nova 0.7, atlas 0.6, ghost 0.75 and nova 0.8, summarize_providers(evaluations, models, 3) returns summaries for acme (2 runs, 0.75), unknown (1 run, 0.75) and zenith (2 runs, 0.75), in that order because the means tie.
-        report_line(ProviderSummary('acme', 2, 0.75)) returns 'acme           2    0.75'.
-        report_line(ProviderSummary('unknown', 12345, 0.5)) returns 'unknown   12,345    0.50'.
+        With these models:
+
+        ```python
+        models = [{'model': 'orbit', 'provider': 'acme'}, {'model': 'nova', 'provider': 'zenith'}, {'model': 'atlas', 'provider': 'acme'}]
+        ```
+
+        and evaluations with scores orbit `0.9`, nova `0.7`, atlas `0.6`, ghost `0.75` and nova `0.8`:
+
+        - `summarize_providers(evaluations, models, 3)` returns summaries for acme (2 runs, `0.75`), unknown (1 run, `0.75`) and zenith (2 runs, `0.75`), in that order because the means tie.
+        - `report_line(ProviderSummary('acme', 2, 0.75))` returns `'acme           2    0.75'`
+        - `report_line(ProviderSummary('unknown', 12345, 0.5))` returns `'unknown   12,345    0.50'`
 
         Check:
-        Complete the theory questions and written explanation, then choose Submit assessment. It checks empty input, unmatched models, unused providers, rounding, ties, ordering, the n limit and exact report text. Means are compared with a small tolerance. Work independently without hints or solutions.
+        Complete the theory questions and written explanation, then choose **Submit assessment**. It checks empty input, unmatched models, unused providers, rounding, ties, ordering, the n limit and exact report text; means are compared with a small tolerance. Work independently without hints or solutions.
         """,
                                  """
                                  from collections import defaultdict

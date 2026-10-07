@@ -144,6 +144,18 @@ Authors may only require concepts taught in a chapter's transitive prerequisites
 
 New chapters live in `Sources/PythonTeacherCore/Chapters/<Name>.swift` as `extension Curriculum`, pass `effort:` explicitly, and are registered in `Curriculum.chapters` in a topological order. New chapter titles have no numeric prefix.
 
+## Readable learning panel and reading settings — 2026-10-06
+
+- [x] Move the seven foundation chapters from `Curriculum.swift` into per-chapter files under `Chapters/` (no content change; curriculum tests green before any rewrite).
+- [x] Replace the paragraph-only renderer with a block-based `MarkdownContent`: `#`/`##`/`###` headings, bullet and numbered lists (numbered steps as badges), `> **Label:**` callouts (key idea, tip, watch out, note), syntax-highlighted Python samples with Copy, ```` ```text ```` output boxes, styled inline code, and exercise sections (`Goal:` … `Check:`) presented as distinct cards. Lessons, instructions, teacher replies and generated exercises share it. The editor and samples share `PythonSyntax`.
+- [x] Lessons default to "One part at a time": split at `##` headings, with part progress, a contents menu, Back/Next (⌥⌘←/→), and the read check-in and practice prompts on the final part. "Whole lesson" restores the continuous view. The instruction panel is wider (ideal 420pt, max 640pt), and reward details sit in a disclosure under the exercise title.
+- [x] Settings → Reading & appearance (UserDefaults, device-local, not progress data): lesson text 85–160%, interface text 85–130% (all app `appFont` styles), reading font (System/Serif/Rounded), line spacing, lesson layout, code font size 11–22pt (editor, ruler, output, samples), live preview and Restore defaults.
+- [x] Rewrite all 17 chapters' lessons and all 68 exercise/assessment instructions for paced reading: short paragraphs, `###` steps, concept → example → output → explanation, one action per numbered step, Starting code as keep/replace bullets, and exact expected results. `#`/`##` headings, IDs, starter/reference/test code, efforts, quizzes, section roles and generation notes are unchanged, and every lesson Python block is byte-identical. Hints received inline-code formatting only. Each agent's chapter tests passed in an isolated copy before merge.
+- [x] The generation prompt asks for the same light Markdown in section bodies (identical for all providers).
+- [x] `swift test --filter MarkdownDocumentTests`: **9 passed**, covering block parsing, section grouping, callout kinds, lesson-part splitting, inline-code styling, highlighting, clamped preferences, a parse check over every curriculum lesson/instruction (balanced fences, five ordered sections), and lesson/settings rendering at default and large serif sizes.
+- [x] Full `swift test`: **264 tests executed, 18 failures**, all the documented editor-height assertion (`AppModelTests.swift:2177`). A pristine `649009e` checkout reproduces the identical 18 failures on this machine. All curriculum tests (which run every lesson block, reference and starter in the restricted runner) passed.
+- Snapshots were inspected for Learn, Practice and Assessment at default and minimum window sizes, a lesson part, and the settings section. Hands-on interaction (slider feel, keyboard navigation, VoiceOver) is not claimed as verified.
+
 ## Current teacher workspace awareness — 2026-09-27
 
 - [x] Reproduce silent 16,000-character code truncation, dropped diagnostics after editing, and stale-history ordering with two failing request regressions (eight assertions). Confirm the editor binding already updates the application model synchronously for committed edits; no continuous cloud streaming or automatic requests are required.
