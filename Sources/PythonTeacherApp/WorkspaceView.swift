@@ -14,6 +14,10 @@ struct WorkspaceView: View {
     @State private var pendingGeneration: PracticeGenerationOptions?
     @State private var validationDetailsPresented = false
     @State private var confirmGenerationRepair = false
+    @State private var lessonParts: [String: Int] = [:]
+    @State private var rewardDetailsExpanded = false
+    @AppStorage(AppearanceKey.lessonLayout) private var lessonLayout = LessonLayout.paced
+    @AppStorage(AppearanceKey.codeSize) private var codeSize = 14.0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let forceReducedMotion: Bool
@@ -28,7 +32,7 @@ struct WorkspaceView: View {
             header
             Divider()
             HSplitView {
-                instructionPanel.frame(minWidth: 320, idealWidth: 380, maxWidth: 480)
+                instructionPanel.frame(minWidth: 320, idealWidth: 420, maxWidth: 640)
                 codingWorkspace
                     .disabled(!model.isUnlocked)
                     .frame(minWidth: 460, maxWidth: .infinity, maxHeight: .infinity)
@@ -87,12 +91,13 @@ struct WorkspaceView: View {
             assessmentTab = 0
             if mode == .assessment { validationDetailsPresented = false; confirmGenerationRepair = false }
         }
+        .appearanceEnvironment()
     }
 
     private var header: some View {
         HStack(spacing: 12) {
             Image(systemName: "graduationcap.fill").font(.system(size: 25)).foregroundStyle(.teal)
-            Text("Python Teacher").font(.headline).fixedSize()
+            Text("Python Teacher").appFont(.headline).fixedSize()
             Spacer(minLength: 8)
             ZStack {
                 if let reward = model.rewardCelebration {
@@ -104,7 +109,7 @@ struct WorkspaceView: View {
             }.frame(width: 280, height: 44)
             Button { focusPresented.toggle() } label: {
                 Label(focusLabel, systemImage: model.progress.activeStudySession == nil ? "timer" : model.focusRunning ? "timer.circle.fill" : "pause.circle")
-                    .font(.callout.monospacedDigit()).frame(minWidth: 85)
+                    .appFont(.callout, monospacedDigit: true).frame(minWidth: 85)
             }
             .help("Saved focus sessions · 25 minutes earns 50 XP")
             .accessibilityLabel(model.progress.activeStudySession == nil ? "Start a focus session" : "Focus session \(model.focusRunning ? "running" : "paused"), \(model.focusRemainingSeconds / 60) minutes and \(model.focusRemainingSeconds % 60) seconds remaining")
@@ -128,10 +133,10 @@ struct WorkspaceView: View {
         return Button { progressPresented.toggle() } label: {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 8) {
-                    Text("Level \(player.level)").font(.caption.bold()).contentTransition(.numericText())
+                    Text("Level \(player.level)").appFont(.caption, weight: .bold).contentTransition(.numericText())
                     Spacer(minLength: 0)
                     Text("\(player.xpRemaining) XP to next")
-                        .font(.caption2).foregroundStyle(.secondary).monospacedDigit()
+                        .appFont(.caption2).foregroundStyle(.secondary).monospacedDigit()
                 }
                 ProgressView(value: player.fraction).tint(.teal)
                     .accessibilityHidden(true)
@@ -162,7 +167,7 @@ struct WorkspaceView: View {
                 }
                 Spacer()
                 Text("\(model.masteryCount)/\(model.chapters.count) mastered")
-                    .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                    .appFont(.caption, monospacedDigit: true).foregroundStyle(.secondary)
             }.padding(.horizontal, 16).padding(.top, 14)
             chapterHeader
             Divider()
@@ -188,24 +193,18 @@ struct WorkspaceView: View {
                     assessmentQuestions
                 } else {
                     ScrollView {
-                        VStack(alignment: .leading, spacing: 14) {
-                            Text(model.exercise.id.hasPrefix("generated-") ? "AI-GENERATED PRACTICE" : model.mode == .assessment ? "INDEPENDENT ASSESSMENT" : "REVIEWED PRACTICE")
-                                .font(.caption.weight(.semibold)).foregroundStyle(.teal)
-                            Text(model.exercise.title).font(.title3.bold())
-                            Label(model.exerciseRewardSummary, systemImage: "sparkles")
-                                .font(.caption).foregroundStyle(.secondary)
-                            Text(model.exerciseRewardDetails)
-                                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        VStack(alignment: .leading, spacing: 18) {
+                            exerciseHeader
                             if model.exercise.id.hasPrefix("generated-") && !model.exercise.hasRequiredInstructionSections {
                                 Label("These saved instructions may be incomplete: required sections are missing or empty. Use New with AI to create a new variation, or choose a reviewed exercise. Your existing work is preserved.", systemImage: "exclamationmark.triangle")
-                                    .font(.callout).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                                    .appFont(.callout).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
                             }
                             if model.isLegacyExercise {
                                 Text("Saved legacy activity: original requirements, code and assistance history are preserved. The revised activity has a separate draft but shares completion XP. Legacy decisions use lists and loops, now taught in Loops and accumulators; new learners should use the revised activity.")
-                                    .font(.callout).foregroundStyle(.secondary)
+                                    .appFont(.callout).foregroundStyle(.secondary)
                             }
                             MarkdownContent(text: model.exercise.instructions)
-                        }.padding(20).frame(maxWidth: .infinity, alignment: .leading)
+                        }.padding(22).frame(maxWidth: .infinity, alignment: .leading)
                     }.id(model.exercise.id)
                 }
             }
@@ -217,10 +216,10 @@ struct WorkspaceView: View {
     private var chapterHeader: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
-                Text(model.chapter.title).font(.title2.bold())
+                Text(model.chapter.title).appFont(.title2, weight: .bold)
                 Spacer()
                 if model.progress.masteredChapterIDs.contains(model.chapter.id) {
-                    Label("Mastered", systemImage: "checkmark.seal.fill").font(.caption).foregroundStyle(.teal)
+                    Label("Mastered", systemImage: "checkmark.seal.fill").appFont(.caption).foregroundStyle(.teal)
                 }
             }
             Picker("Learning mode", selection: Binding(get: { model.mode }, set: { model.selectMode($0) })) {
@@ -229,14 +228,106 @@ struct WorkspaceView: View {
         }.padding(20)
     }
 
+    private var exerciseHeader: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(model.exercise.id.hasPrefix("generated-") ? "AI-GENERATED PRACTICE" : model.mode == .assessment ? "INDEPENDENT ASSESSMENT" : "REVIEWED PRACTICE")
+                .appFont(.caption, weight: .semibold).tracking(0.8).foregroundStyle(.teal)
+            Text(model.exercise.title).appFont(.title2, weight: .bold).fixedSize(horizontal: false, vertical: true)
+            DisclosureGroup(isExpanded: $rewardDetailsExpanded) {
+                Text(model.exerciseRewardDetails)
+                    .appFont(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 4)
+            } label: {
+                Label(model.exerciseRewardSummary, systemImage: "sparkles")
+                    .appFont(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            .help("Show how this exercise's XP is calculated")
+        }
+    }
+
     private var lesson: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                Label("One concept at a time", systemImage: "book.closed").font(.subheadline).foregroundStyle(.teal)
-                MarkdownContent(text: model.chapter.lesson)
+        let parts = MarkdownDocument.lessonParts(model.chapter.lesson)
+        let paced = lessonLayout == .paced && parts.count > 1
+        let index = min(lessonParts[model.chapter.id] ?? 0, max(parts.count - 1, 0))
+        let isLast = !paced || index == parts.count - 1
+        return ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    Group {
+                        if paced { lessonProgress(parts, index: index) }
+                        else { Label("One concept at a time", systemImage: "book.closed").appFont(.subheadline).foregroundStyle(.teal) }
+                    }.id("lesson-top")
+                    MarkdownContent(text: paced ? parts[index].markdown : model.chapter.lesson)
+                        .id("\(model.chapter.id)-\(paced ? index : -1)")
+                    if paced { lessonNavigation(parts, index: index) }
+                    if isLast { lessonWrapUp }
+                }.padding(24).frame(maxWidth: 820, alignment: .leading).frame(maxWidth: .infinity)
+            }
+            .onChange(of: index) { _, _ in proxy.scrollTo("lesson-top", anchor: .top) }
+        }
+    }
+
+    private func showLessonPart(_ index: Int) {
+        lessonParts[model.chapter.id] = index
+    }
+
+    private func lessonProgress(_ parts: [MarkdownDocument.LessonPart], index: Int) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Label("Part \(index + 1) of \(parts.count)", systemImage: "book.closed")
+                    .appFont(.subheadline, weight: .semibold).foregroundStyle(.teal)
+                Spacer()
+                Menu {
+                    ForEach(parts) { part in
+                        Button { showLessonPart(part.id) } label: {
+                            if part.id == index { Label(part.title, systemImage: "checkmark") } else { Text(part.title) }
+                        }
+                    }
+                } label: { Label("Contents", systemImage: "list.bullet") }
+                    .menuStyle(.borderlessButton).fixedSize().appFont(.caption)
+                    .help("Jump to any part of this lesson")
+            }
+            HStack(spacing: 4) {
+                ForEach(parts) { part in
+                    Capsule().fill(part.id <= index ? Color.teal : Color.secondary.opacity(0.2)).frame(height: 4)
+                        .contentShape(Rectangle().inset(by: -6))
+                        .onTapGesture { showLessonPart(part.id) }
+                        .help(part.title)
+                }
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Lesson progress")
+            .accessibilityValue("Part \(index + 1) of \(parts.count): \(parts[index].title)")
+        }
+    }
+
+    private func lessonNavigation(_ parts: [MarkdownDocument.LessonPart], index: Int) -> some View {
+        HStack(spacing: 12) {
+            if index > 0 {
+                Button { showLessonPart(index - 1) } label: { Label("Back", systemImage: "chevron.left") }
+                    .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
+            }
+            Spacer(minLength: 0)
+            if index < parts.count - 1 {
+                Button { showLessonPart(index + 1) } label: {
+                    HStack(spacing: 6) {
+                        Text("Next: \(parts[index + 1].title)").lineLimit(1).truncationMode(.tail)
+                        Image(systemName: "chevron.right")
+                    }
+                }
+                .buttonStyle(.borderedProminent).tint(.teal)
+                .keyboardShortcut(.rightArrow, modifiers: [.command, .option])
+                .help("Continue to the next part (⌥⌘→)")
+            }
+        }
+        .padding(.top, 6)
+    }
+
+    private var lessonWrapUp: some View {
+        VStack(alignment: .leading, spacing: 22) {
                 Divider()
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Make it yours").font(.headline)
+                    Text("Make it yours").appFont(.headline)
                     Text("Before opening the exercise, explain the main idea in your own words. Then write the code yourself—even when an example looks familiar.").foregroundStyle(.secondary)
                     VStack(alignment: .leading, spacing: 8) {
                         Button {
@@ -247,7 +338,7 @@ struct WorkspaceView: View {
                         }
                         .disabled(model.progress.lessonCompletions[model.chapter.id] != nil || model.storageLocked)
                         Text("Your own check-in, not a mastery assessment. Awarded once per lesson.")
-                            .font(.caption).foregroundStyle(.secondary)
+                            .appFont(.caption).foregroundStyle(.secondary)
                     }
                     VStack(alignment: .leading, spacing: 12) {
                         Button("Start hands-on practice") { model.selectMode(.practice) }.buttonStyle(.borderedProminent).tint(.teal)
@@ -256,37 +347,36 @@ struct WorkspaceView: View {
                 }
                 if !model.currentAttempts.isEmpty {
                     Divider()
-                    Text("Recent attempts").font(.headline)
+                    Text("Recent attempts").appFont(.headline)
                     ForEach(model.currentAttempts.prefix(5)) { attempt in
                         HStack {
                             Image(systemName: attempt.demonstratesMastery ? "checkmark.seal" : attempt.testsPassed ? "checkmark.circle" : "arrow.clockwise")
                                 .foregroundStyle(attempt.testsPassed ? Color.teal : .secondary)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(attempt.mode == .assessment ? (attempt.demonstratesMastery ? "Assessment passed" : "Assessment: more practice needed") : (attempt.testsPassed ? "Practice checks passed" : "Practice: checks not passed")).font(.callout)
-                                Text(attempt.exerciseID).font(.caption.monospaced()).foregroundStyle(.secondary)
-                                Text("\(attempt.hintCount) hints / teacher requests\(attempt.solutionRevealed ? " · solution viewed" : "")").font(.caption).foregroundStyle(.secondary)
+                                Text(attempt.mode == .assessment ? (attempt.demonstratesMastery ? "Assessment passed" : "Assessment: more practice needed") : (attempt.testsPassed ? "Practice checks passed" : "Practice: checks not passed")).appFont(.callout)
+                                Text(attempt.exerciseID).appFont(.caption, design: .monospaced).foregroundStyle(.secondary)
+                                Text("\(attempt.hintCount) hints / teacher requests\(attempt.solutionRevealed ? " · solution viewed" : "")").appFont(.caption).foregroundStyle(.secondary)
                             }
                             Spacer()
-                            Text(attempt.date, style: .date).font(.caption).foregroundStyle(.secondary)
+                            Text(attempt.date, style: .date).appFont(.caption).foregroundStyle(.secondary)
                         }
                     }
                 }
-            }.padding(24).frame(maxWidth: 820, alignment: .leading).frame(maxWidth: .infinity)
         }
     }
 
     private var codingWorkspace: some View {
         VStack(spacing: 0) {
             HStack {
-                Label("main.py", systemImage: "doc.text").font(.caption.monospaced())
-                if model.mode == .lesson { Text("Practice draft").font(.caption).foregroundStyle(.secondary) }
+                Label("main.py", systemImage: "doc.text").appFont(.caption, design: .monospaced)
+                if model.mode == .lesson { Text("Practice draft").appFont(.caption).foregroundStyle(.secondary) }
                 Spacer()
                 Button { model.exportCode() } label: { Image(systemName: "square.and.arrow.up") }.help("Export Python file").accessibilityLabel("Export Python file")
-                Button("Restore starter") { confirmReset = true }.font(.caption).disabled(model.isBusy)
+                Button("Restore starter") { confirmReset = true }.appFont(.caption).disabled(model.isBusy)
             }.buttonStyle(.borderless).padding(.horizontal, 14).padding(.vertical, 12)
             Divider()
             VSplitView {
-                CodeEditor(text: $model.code, editable: !model.isBusy && model.isUnlocked)
+                CodeEditor(text: $model.code, editable: !model.isBusy && model.isUnlocked, fontSize: codeSize.clamped(to: AppearanceKey.codeRange))
                     .id(model.draftKey).frame(minHeight: 330, maxHeight: .infinity)
                 outputPanel.frame(minHeight: 80, idealHeight: 155, maxHeight: .infinity)
             }
@@ -294,7 +384,7 @@ struct WorkspaceView: View {
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: "pencil.and.outline").foregroundStyle(.secondary).padding(.top, 4)
                     TextField("Reflection: why does your solution work?", text: $model.reflection, axis: .vertical)
-                        .lineLimit(1...3).textFieldStyle(.plain).font(.callout).disabled(model.isBusy)
+                        .lineLimit(1...3).textFieldStyle(.plain).appFont(.callout).disabled(model.isBusy)
                 }.padding(12)
             }
             Divider()
@@ -311,7 +401,7 @@ struct WorkspaceView: View {
                 }
             }.labelsHidden().frame(maxWidth: .infinity).disabled(model.isBusy)
             Text("✓ Previously passed checks · \(model.completedPracticeExerciseIDs.count)/\(model.exercises.count) completed")
-                .font(.caption).foregroundStyle(.secondary)
+                .appFont(.caption).foregroundStyle(.secondary)
                 .help("Includes guided solutions. A checkmark records a past successful Check solution, not verification of your current draft or chapter mastery.")
             Button {
                 generationOptions.normalizeProject(for: model.chapter, curriculum: model.chapters)
@@ -329,7 +419,7 @@ struct WorkspaceView: View {
                         } else {
                             Image(systemName: "info.circle").foregroundStyle(.teal)
                         }
-                        Text(message).font(.caption).textSelection(.enabled)
+                        Text(message).appFont(.caption).textSelection(.enabled)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     if model.rejectedPractice != nil && !model.generationState.isInProgress {
@@ -338,7 +428,7 @@ struct WorkspaceView: View {
                             Button("Repair with AI…") { confirmGenerationRepair = true }
                                 .disabled(!model.canRepairGeneratedPractice)
                                 .help("One additional AI request using the rejected exercise and error. Return to its chapter to repair it.")
-                        }.font(.caption)
+                        }.appFont(.caption)
                     }
                     HStack {
                         if model.generationState.isInProgress {
@@ -350,7 +440,7 @@ struct WorkspaceView: View {
                             Spacer()
                             Button("Dismiss") { model.dismissGenerationStatus() }
                         }
-                    }.font(.caption)
+                    }.appFont(.caption)
                 }.padding(10).background(Color.teal.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
             }
         }.padding(12)
@@ -359,11 +449,11 @@ struct WorkspaceView: View {
     private var assessmentQuestions: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                Text("Show what you understand").font(.title3.bold())
-                Text("Pass the coding checks and all three theory questions. Documentation is allowed; teacher assistance is disabled. Your written explanation is saved for reflection, not automatically graded.").font(.callout).foregroundStyle(.secondary)
+                Text("Show what you understand").appFont(.title3, weight: .bold)
+                Text("Pass the coding checks and all three theory questions. Documentation is allowed; teacher assistance is disabled. Your written explanation is saved for reflection, not automatically graded.").appFont(.callout).foregroundStyle(.secondary)
                 ForEach(Array(model.chapter.quiz.enumerated()), id: \.element.id) { index, question in
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("\(index + 1). \(question.prompt)").font(.headline)
+                        Text("\(index + 1). \(question.prompt)").appFont(.headline)
                         ForEach(Array(question.options.enumerated()), id: \.offset) { optionIndex, option in
                             Button { model.setAnswer(optionIndex, question: question.id) } label: {
                                 HStack(alignment: .top, spacing: 10) {
@@ -377,9 +467,9 @@ struct WorkspaceView: View {
                     }
                 }
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Explain your approach").font(.headline)
-                    Text("How does your code work? Which edge case did you consider? What would you change if the requirements changed?").font(.callout).foregroundStyle(.secondary)
-                    TextEditor(text: $model.reflection).font(.body).frame(minHeight: 110).padding(6)
+                    Text("Explain your approach").appFont(.headline)
+                    Text("How does your code work? Which edge case did you consider? What would you change if the requirements changed?").appFont(.callout).foregroundStyle(.secondary)
+                    TextEditor(text: $model.reflection).appFont(.body).frame(minHeight: 110).padding(6)
                         .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8)).disabled(model.isBusy)
                 }
             }.padding(20)
@@ -389,8 +479,8 @@ struct WorkspaceView: View {
     private var outputPanel: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Label("OUTPUT & CHECKS", systemImage: "terminal").font(.caption2.weight(.semibold))
-                if model.isOutputStale { Text("Previous code version").font(.caption2).foregroundStyle(.orange) }
+                Label("OUTPUT & CHECKS", systemImage: "terminal").appFont(.caption2, weight: .semibold)
+                if model.isOutputStale { Text("Previous code version").appFont(.caption2).foregroundStyle(.orange) }
                 Spacer()
                 if model.running { ProgressView().controlSize(.mini) }
             }.foregroundStyle(.secondary).padding(.horizontal, 14).padding(.vertical, 9)
@@ -398,11 +488,11 @@ struct WorkspaceView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     ScrollView(.horizontal) {
-                        Text(model.output).font(.system(size: 12, design: .monospaced)).textSelection(.enabled)
+                        Text(model.output).font(.system(size: codeSize.clamped(to: AppearanceKey.codeRange) - 2, design: .monospaced)).textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     if !model.feedback.isEmpty {
-                        Text(model.feedback).font(.callout).textSelection(.enabled)
+                        Text(model.feedback).appFont(.callout).textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
@@ -424,14 +514,14 @@ struct WorkspaceView: View {
             if model.isBusy { Button("Stop", role: .cancel) { model.cancelWork() } }
             Spacer()
             Text(model.mode == .assessment ? "Independent attempt" : model.solutionRevealed ? "Solution viewed" : "\(model.hintCount) assists")
-                .font(.caption).foregroundStyle(.secondary)
+                .appFont(.caption).foregroundStyle(.secondary)
         }.padding(12)
     }
 
     private var lockedChapter: some View {
         VStack(spacing: 18) {
             Image(systemName: "lock.open").font(.system(size: 35)).foregroundStyle(.teal)
-            Text("Build on a solid foundation").font(.title2.bold())
+            Text("Build on a solid foundation").appFont(.title2, weight: .bold)
             Text(model.lockedChapterExplanation)
                 .foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 430)
                 .fixedSize(horizontal: false, vertical: true)
@@ -447,7 +537,7 @@ struct WorkspaceView: View {
                     .buttonStyle(.borderedProminent).tint(.teal).disabled(model.isBusy)
             }
             Button(model.overrideButtonTitle) { confirmOverride = true }
-            Text("An override unlocks study, but never marks a chapter mastered.").font(.caption).foregroundStyle(.secondary)
+            Text("An override unlocks study, but never marks a chapter mastered.").appFont(.caption).foregroundStyle(.secondary)
         }.padding(30).frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
@@ -458,7 +548,7 @@ struct WorkspaceView: View {
             Text("Python · local execution")
             Divider().frame(height: 10)
             Text("AI: \(model.requestCount)/\(model.progress.sessionRequestLimit) requests this launch")
-        }.font(.caption2).foregroundStyle(.secondary).padding(.horizontal, 16).padding(.vertical, 7)
+        }.appFont(.caption2).foregroundStyle(.secondary).padding(.horizontal, 16).padding(.vertical, 7)
     }
 }
 
@@ -469,9 +559,9 @@ struct GenerationValidationDetailsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Generated exercise validation").font(.title2.bold())
+            Text("Generated exercise validation").appFont(.title2, weight: .bold)
             Text("This report includes the rejected AI exercise's reference answer and tests, not your current draft or API key. It is kept only for this session. Copy it if you need help diagnosing the failure.")
-                .font(.callout).foregroundStyle(.secondary)
+                .appFont(.callout).foregroundStyle(.secondary)
             ScrollView {
                 Text(rejected.report).font(.system(size: 12, design: .monospaced)).textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -520,25 +610,25 @@ struct PracticeGeneratorView: View {
                 Text("My own objective…").tag(String?.none)
             }
             Text(brief?.objective ?? "Describe your objective in the field below. It is treated as theme data only.")
-                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            Text("Focus · 1–\(PracticeGenerationOptions.maximumProjectFocus) sections from this chapter").font(.subheadline.bold()).padding(.top, 4)
+                .appFont(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Text("Focus · 1–\(PracticeGenerationOptions.maximumProjectFocus) sections from this chapter").appFont(.subheadline, weight: .bold).padding(.top, 4)
             let focus = options.projectFocusIDs(for: model.chapter)
             ForEach(model.chapter.practiceTopics(for: options.style)) { topic in
                 let selected = focus.contains(topic.id)
                 Toggle(String(topic.title.dropFirst(model.chapter.title.count + 2)), isOn: focusBinding(topic))
-                    .font(.callout)
+                    .appFont(.callout)
                     .disabled(selected ? focus.count == 1 : focus.count >= PracticeGenerationOptions.maximumProjectFocus)
             }
             Text(model.prerequisiteChapters.isEmpty ? "Toolkit: this is the first chapter, so the project uses only this lesson."
                  : "Toolkit (allowed, not required): \(model.prerequisiteChapters.map(\.title).joined(separator: "; "))")
-                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                .appFont(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Create a practice challenge").font(.title2.bold())
-            Text(model.chapter.title).font(.subheadline).foregroundStyle(.secondary)
+            Text("Create a practice challenge").appFont(.title2, weight: .bold)
+            Text(model.chapter.title).appFont(.subheadline).foregroundStyle(.secondary)
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     VStack(alignment: .leading, spacing: 7) {
@@ -546,20 +636,20 @@ struct PracticeGeneratorView: View {
                             ForEach(PracticeScope.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                         }
                         .onChange(of: options.scope) { _, _ in options.normalizeProject(for: model.chapter, curriculum: model.chapters) }
-                        Text(options.scope.explanation).font(.callout).foregroundStyle(.secondary)
+                        Text(options.scope.explanation).appFont(.callout).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                         if options.scope == .selectedExercise {
-                            Text("Selected: \(model.exercise.title)").font(.callout)
+                            Text("Selected: \(model.exercise.title)").appFont(.callout)
                         }
                     }
                     if options.scope == .project { projectChoices }
                     VStack(alignment: .leading, spacing: 7) {
-                        Text("Difficulty · relative to this chapter's reviewed practice").font(.subheadline.bold())
+                        Text("Difficulty · relative to this chapter's reviewed practice").appFont(.subheadline, weight: .bold)
                         Picker("Difficulty", selection: $options.difficulty) {
                             ForEach(PracticeDifficulty.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                         }.pickerStyle(.segmented)
-                        Text(options.difficulty.explanation).font(.callout).foregroundStyle(.secondary)
-                        Text("More coverage can mean more steps, even on Easier.").font(.caption).foregroundStyle(.secondary)
+                        Text(options.difficulty.explanation).appFont(.callout).foregroundStyle(.secondary)
+                        Text("More coverage can mean more steps, even on Easier.").appFont(.caption).foregroundStyle(.secondary)
                     }
                     Picker("Format", selection: $options.style) {
                         ForEach(PracticeStyle.allCases, id: \.self) { Text($0.rawValue).tag($0) }
@@ -573,24 +663,24 @@ struct PracticeGeneratorView: View {
                                 if value.count > 400 { options.scenario = String(value.prefix(400)) }
                             }
                         Text("Use synthetic or public examples only. Sent to \(model.progress.provider.name). \(options.scenario.count)/400 characters.")
-                            .font(.caption).foregroundStyle(.secondary)
+                            .appFont(.caption).foregroundStyle(.secondary)
                     }
                     DisclosureGroup(options.scope == .project ? "Required coverage · \(max(0, topics.count - 1)) focus sections + integration"
                                     : "Requested coverage · \(topics.count) \(options.scope == .selectedExercise ? "exercise" : "lesson sections")") {
                         VStack(alignment: .leading, spacing: 6) {
-                            ForEach(topics) { Text($0.title).font(.caption).frame(maxWidth: .infinity, alignment: .leading) }
+                            ForEach(topics) { Text($0.title).appFont(.caption).frame(maxWidth: .infinity, alignment: .leading) }
                         }.padding(.top, 8)
                     }
                     if let effort = try? ExperienceRules.generatedEffort(options: options, chapter: model.chapter, selectedExercise: model.exercise, curriculum: model.chapters) {
                         let maximum = ExerciseEffort(difficulty: options.difficulty,
                             scopeUnits: ExperienceRules.generatedUnitCap(scope: options.scope, chapter: model.chapter)).practiceXP
                         Label(maximum > effort.practiceXP ? "First success · +\(effort.practiceXP)–\(maximum) XP" : "First success · +\(effort.practiceXP) XP", systemImage: "sparkles")
-                            .font(.callout.bold()).foregroundStyle(.teal)
+                            .appFont(.callout, weight: .bold).foregroundStyle(.teal)
                         Text("Coverage sets the minimum workload. Local analysis of the generated starter and reference can increase it for additional work, up to the chapter assessment's workload (one more unit for projects). The exact reward appears on the finished exercise. Viewing the solution halves XP.")
-                            .font(.caption).foregroundStyle(.secondary)
+                            .appFont(.caption).foregroundStyle(.secondary)
                     }
                     Text("One AI request; your current draft is kept. Requires a \(model.progress.provider.name) API key and cloud consent. Broad challenges can use more tokens and cost more. The app checks the coverage checklist and runs the reference and starter, but cannot guarantee the AI covered every concept correctly.")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .appFont(.caption).foregroundStyle(.secondary)
                 }.padding(.trailing, 6)
             }
             Divider()
@@ -614,7 +704,7 @@ struct PlayerProgressView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Label("Your player progress", systemImage: "sparkles").font(.headline)
+                Label("Your player progress", systemImage: "sparkles").appFont(.headline)
                 Spacer()
                 Button { dismiss() } label: { Image(systemName: "xmark") }
                     .buttonStyle(.borderless).accessibilityLabel("Close player progress")
@@ -625,20 +715,20 @@ struct PlayerProgressView: View {
                     levelCard
                     if model.needsRewardUpdate {
                         Text(model.updatingRewards ? "Analyzing saved exercises and recalculating XP…" : "Earlier rewards need to be recalculated using difficulty and workload. Past totals and your level may change.")
-                            .font(.callout).foregroundStyle(.secondary)
+                            .appFont(.callout).foregroundStyle(.secondary)
                         Button("Update XP ratings") { model.upgradeExperience() }
                             .disabled(model.isBusy || model.storageLocked)
                     }
                     VStack(alignment: .leading, spacing: 8) {
                         Label("\(model.masteryCount)/\(model.chapters.count) assessments passed", systemImage: "checkmark.seal")
-                            .font(.subheadline.bold())
+                            .appFont(.subheadline, weight: .bold)
                         Text("Player level measures study effort, NOT chapter mastery. Only passed assessments demonstrate mastery; XP and levels never unlock chapters.")
-                            .font(.callout).foregroundStyle(.secondary)
+                            .appFont(.callout).foregroundStyle(.secondary)
                     }
                     milestones
                     Divider()
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("Every kind of effort counts").font(.headline)
+                        Text("Every kind of effort counts").appFont(.headline)
                         rewardRule("First successful practice", detail: "50 / 100 / 150 XP per workload unit for Easier / Similar / Harder, relative to the chapter. Hints are welcome.", amount: "Scaled")
                         rewardRule("Reference-guided practice", detail: "First success after viewing the solution earns half the task's reward.", amount: "50%")
                         rewardRule("First full assessment passed", detail: "Three times the task's practice value. Coding checks and theory, independently.", amount: "3×")
@@ -646,9 +736,9 @@ struct PlayerProgressView: View {
                         rewardRule("Independent successful retake", detail: "Same task, 7 days after your last independent success. An earlier success restarts the wait.", amount: "+25 XP")
                         rewardRule("Completed focus session", detail: "25 active minutes. Pauses are always welcome.", amount: "+50 XP")
                         Text("Reviewed tasks have authored ratings. AI tasks use requested coverage plus a local estimate of changed result assignments and function work in the starter/reference, capped at the chapter assessment's workload (one more unit for projects). Older tasks without difficulty metadata use an estimated difficulty. Learner code length never affects XP.")
-                            .font(.caption).foregroundStyle(.secondary)
+                            .appFont(.caption).foregroundStyle(.secondary)
                         Text("Past completion rewards are recalculated once when rules change; totals and levels can change, but no duplicate completions are added. Saved AI tasks receive the project cap. Missing exercises retain their last known reward within that cap. Old unsaved timer activity cannot be recovered. Breaks never cost XP; there are no streak penalties.")
-                            .font(.caption).foregroundStyle(.secondary)
+                            .appFont(.caption).foregroundStyle(.secondary)
                     }
                     Divider()
                     experienceHistory
@@ -659,7 +749,7 @@ struct PlayerProgressView: View {
                     ))
                     .disabled(model.storageLocked)
                     Text("XP feedback and history stay visible with effects off. Reduce Motion is always respected. No sounds.")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .appFont(.caption).foregroundStyle(.secondary)
                 }.padding(20)
             }
         }
@@ -670,22 +760,22 @@ struct PlayerProgressView: View {
         let player = model.progress.playerProgress
         return VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
-                Text("Level \(player.level)").font(.largeTitle.bold()).contentTransition(.numericText())
-                Image(systemName: "infinity").font(.title3).foregroundStyle(.secondary)
+                Text("Level \(player.level)").appFont(.largeTitle, weight: .bold).contentTransition(.numericText())
+                Image(systemName: "infinity").appFont(.title3).foregroundStyle(.secondary)
                     .accessibilityLabel("No level cap")
                 Spacer()
             }
-            Text(player.rankTitle).font(.headline).foregroundStyle(.teal)
+            Text(player.rankTitle).appFont(.headline).foregroundStyle(.teal)
             ProgressView(value: player.fraction).tint(.teal)
             HStack {
                 Text("\(player.totalXP.formatted()) XP earned")
                 Spacer()
                 Text("\(player.xpRemaining) to next")
-            }.font(.caption.monospacedDigit())
+            }.appFont(.caption, monospacedDigit: true)
             Text("\(player.xpIntoLevel) / \(player.xpToNextLevel) XP this level")
-                .font(.caption).foregroundStyle(.secondary)
+                .appFont(.caption).foregroundStyle(.secondary)
             Text("No finish line. Keep leveling beyond 100: each next level costs 100 + 50 × your current level in XP.")
-                .font(.caption).foregroundStyle(.secondary)
+                .appFont(.caption).foregroundStyle(.secondary)
         }
         .padding(16).frame(maxWidth: .infinity, alignment: .leading)
         .background(.teal.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
@@ -694,7 +784,7 @@ struct PlayerProgressView: View {
 
     private var milestones: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Lifetime milestones").font(.headline)
+            Text("Lifetime milestones").appFont(.headline)
             milestone("First practice", symbol: "terminal", earned: model.progress.completedPracticeCount >= 1,
                       detail: "\(model.progress.completedPracticeCount) successful practices")
             milestone("Focus five", symbol: "timer", earned: model.progress.completedSessionCount >= 5,
@@ -706,14 +796,14 @@ struct PlayerProgressView: View {
 
     private func milestone(_ title: String, symbol: String, earned: Bool, detail: String) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: symbol).font(.title3).frame(width: 28)
+            Image(systemName: symbol).appFont(.title3).frame(width: 28)
                 .foregroundStyle(earned ? Color.teal : .secondary)
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.subheadline.weight(.medium))
-                Text(detail).font(.caption).foregroundStyle(.secondary)
+                Text(title).appFont(.subheadline, weight: .medium)
+                Text(detail).appFont(.caption).foregroundStyle(.secondary)
             }
             Spacer()
-            Text(earned ? "Earned" : "Milestone").font(.caption)
+            Text(earned ? "Earned" : "Milestone").appFont(.caption)
                 .foregroundStyle(earned ? Color.teal : .secondary)
         }
     }
@@ -721,30 +811,30 @@ struct PlayerProgressView: View {
     private func rewardRule(_ title: String, detail: String, amount: String) -> some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.callout)
-                Text(detail).font(.caption).foregroundStyle(.secondary)
+                Text(title).appFont(.callout)
+                Text(detail).appFont(.caption).foregroundStyle(.secondary)
             }
             Spacer(minLength: 4)
-            Text(amount).font(.caption.monospacedDigit().bold()).foregroundStyle(.teal).fixedSize()
+            Text(amount).appFont(.caption, weight: .bold, monospacedDigit: true).foregroundStyle(.teal).fixedSize()
         }
     }
 
     private var experienceHistory: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Recent XP").font(.headline)
+            Text("Recent XP").appFont(.headline)
             if model.progress.experienceEvents.isEmpty {
                 Text("Your story starts here. Read a lesson, try some code, or settle into a focus session.")
-                    .font(.callout).foregroundStyle(.secondary)
+                    .appFont(.callout).foregroundStyle(.secondary)
             } else {
                 ForEach(Array(model.progress.experienceEvents.sorted { $0.date > $1.date }.prefix(10))) { event in
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 3) {
-                            Text(event.title).font(.callout)
+                            Text(event.title).appFont(.callout)
                             Text(event.date, format: .dateTime.month(.abbreviated).day().hour().minute())
-                                .font(.caption).foregroundStyle(.secondary)
+                                .appFont(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
-                        Text("+\(event.amount) XP").font(.caption.monospacedDigit().bold()).foregroundStyle(.teal).fixedSize()
+                        Text("+\(event.amount) XP").appFont(.caption, weight: .bold, monospacedDigit: true).foregroundStyle(.teal).fixedSize()
                     }
                 }
             }
@@ -760,7 +850,7 @@ struct FocusSessionView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Label("A little time, just for learning", systemImage: "timer").font(.headline)
+                Label("A little time, just for learning", systemImage: "timer").appFont(.headline)
                 Spacer()
                 Button { dismiss() } label: { Image(systemName: "xmark") }
                     .buttonStyle(.borderless).accessibilityLabel("Close focus session")
@@ -774,7 +864,7 @@ struct FocusSessionView: View {
                         lifetimeStat("\(model.progress.totalFocusMinutes)", title: "focus minutes")
                     }
                     Text("Lifetime totals count finished 25-minute sessions only. Ending early never takes away XP. There is no streak to protect.")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .appFont(.caption).foregroundStyle(.secondary)
                     Divider()
                     sessionHistory
                 }.padding(20)
@@ -794,7 +884,7 @@ struct FocusSessionView: View {
             if model.progress.activeStudySession != nil {
                 Label(model.focusRunning ? "Focus in progress" : "Paused · ready when you are",
                       systemImage: model.focusRunning ? "timer" : "pause.circle")
-                    .font(.subheadline).foregroundStyle(.teal)
+                    .appFont(.subheadline).foregroundStyle(.teal)
                 Text(countdown).font(.system(size: 48, weight: .semibold, design: .rounded)).monospacedDigit()
                     .accessibilityLabel("\(max(0, model.focusRemainingSeconds) / 60) minutes and \(max(0, model.focusRemainingSeconds) % 60) seconds remaining")
                 ProgressView(value: Double(max(0, min(1500, 1500 - model.focusRemainingSeconds))), total: 1500)
@@ -811,15 +901,15 @@ struct FocusSessionView: View {
                 }
                 .disabled(model.storageLocked)
                 Text("Saved as you go. After closing and reopening the app, resume when you are ready. Paused and closed-app time do not count.")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .appFont(.caption).foregroundStyle(.secondary)
             } else {
-                Text("Make room for one small win.").font(.title3.bold())
-                Text("25 minutes of focused learning").font(.callout).foregroundStyle(.secondary)
-                Label("+50 XP when complete", systemImage: "sparkles").font(.subheadline.bold()).foregroundStyle(.teal)
+                Text("Make room for one small win.").appFont(.title3, weight: .bold)
+                Text("25 minutes of focused learning").appFont(.callout).foregroundStyle(.secondary)
+                Label("+50 XP when complete", systemImage: "sparkles").appFont(.subheadline, weight: .bold).foregroundStyle(.teal)
                 Button("Start 25-minute session", systemImage: "play.fill") { model.startFocusSession() }
                     .buttonStyle(.borderedProminent).tint(.teal).disabled(model.storageLocked)
                 Text("Learn, practice, or assess at your own pace. You can pause for a break at any time.")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .appFont(.caption).foregroundStyle(.secondary)
             }
         }
         .padding(16).frame(maxWidth: .infinity, alignment: .leading)
@@ -833,28 +923,28 @@ struct FocusSessionView: View {
 
     private func lifetimeStat(_ value: String, title: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(value).font(.title2.bold()).monospacedDigit()
-            Text(title).font(.caption).foregroundStyle(.secondary)
+            Text(value).appFont(.title2, weight: .bold).monospacedDigit()
+            Text(title).appFont(.caption).foregroundStyle(.secondary)
         }
     }
 
     private var sessionHistory: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Recent completed sessions").font(.headline)
+            Text("Recent completed sessions").appFont(.headline)
             if model.progress.studySessions.isEmpty {
                 Text("Your first finished session will appear here. Small steps add up.")
-                    .font(.callout).foregroundStyle(.secondary)
+                    .appFont(.callout).foregroundStyle(.secondary)
             } else {
                 ForEach(Array(model.progress.studySessions.sorted { $0.completedAt > $1.completedAt }.prefix(6))) { session in
                     HStack(spacing: 10) {
                         Image(systemName: "checkmark.circle.fill").foregroundStyle(.teal)
                         VStack(alignment: .leading, spacing: 3) {
                             Text(session.completedAt, format: .dateTime.month(.abbreviated).day().hour().minute())
-                                .font(.callout)
-                            Text("25 minutes completed").font(.caption).foregroundStyle(.secondary)
+                                .appFont(.callout)
+                            Text("25 minutes completed").appFont(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
-                        Text("+50 XP").font(.caption.monospacedDigit().bold()).foregroundStyle(.teal)
+                        Text("+50 XP").appFont(.caption, weight: .bold, monospacedDigit: true).foregroundStyle(.teal)
                     }
                 }
             }
@@ -983,7 +1073,7 @@ struct RewardCelebrationView: View {
         HStack(spacing: 8) {
             ZStack {
                 Image(systemName: reward.leveledUp ? "star.circle.fill" : "checkmark.circle.fill")
-                    .font(.title2).foregroundStyle(.teal)
+                    .appFont(.title2).foregroundStyle(.teal)
                 if reward.leveledUp && effectsEnabled && !reduceMotion && !forceReducedMotion {
                     ForEach(0..<6) { index in
                         Image(systemName: "star.fill").font(.system(size: 6)).foregroundStyle(.teal)
@@ -995,11 +1085,11 @@ struct RewardCelebrationView: View {
             }.frame(width: 32, height: 32).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(reward.leveledUp ? "+\(reward.amount) XP · Level \(reward.level)!" : "+\(reward.amount) XP")
-                    .font(.callout.bold()).foregroundStyle(.teal)
-                Text(reward.title).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    .appFont(.callout, weight: .bold).foregroundStyle(.teal)
+                Text(reward.title).appFont(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 0)
-            Button(action: onDismiss) { Image(systemName: "xmark").font(.caption) }
+            Button(action: onDismiss) { Image(systemName: "xmark").appFont(.caption) }
                 .buttonStyle(.borderless).accessibilityLabel("Dismiss XP celebration")
         }
         .padding(.horizontal, 10).padding(.vertical, 4)
@@ -1043,11 +1133,11 @@ struct ChapterBrowserView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 10) {
-                Text("YOUR PYTHON PATH").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                Text("YOUR PYTHON PATH").appFont(.caption, weight: .semibold).foregroundStyle(.secondary)
                 HStack {
-                    Text("Chapters").font(.title3.bold())
+                    Text("Chapters").appFont(.title3, weight: .bold)
                     Spacer()
-                    Text("\(model.masteryCount)/\(model.chapters.count)").font(.callout.monospacedDigit()).foregroundStyle(.secondary)
+                    Text("\(model.masteryCount)/\(model.chapters.count)").appFont(.callout, monospacedDigit: true).foregroundStyle(.secondary)
                         .accessibilityLabel("\(model.masteryCount) of \(model.chapters.count) chapters mastered")
                 }
                 ProgressView(value: Double(model.masteryCount), total: Double(model.chapters.count)).tint(.teal)
@@ -1062,8 +1152,8 @@ struct ChapterBrowserView: View {
                     }
                     if !model.reviewIDs.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
-                            Label("Due for recall", systemImage: "arrow.counterclockwise").font(.subheadline.bold())
-                            Text("Revisit these topics with an independent practice attempt.").font(.caption).foregroundStyle(.secondary)
+                            Label("Due for recall", systemImage: "arrow.counterclockwise").appFont(.subheadline, weight: .bold)
+                            Text("Revisit these topics with an independent practice attempt.").appFont(.caption).foregroundStyle(.secondary)
                             ForEach(model.chapters.filter { model.reviewIDs.contains($0.id) }) { chapter in
                                 Button(chapter.title) { model.selectChapter(chapter.id); model.selectMode(.practice); onSelect() }
                                     .buttonStyle(.link).disabled(model.isBusy)
@@ -1075,11 +1165,11 @@ struct ChapterBrowserView: View {
             }
             Spacer(minLength: 8)
             VStack(alignment: .leading, spacing: 8) {
-                Label("A little, every day", systemImage: "sun.max").font(.subheadline.weight(.medium))
-                Text("3 min recall · 5 min learn\n14 min code · 3 min reflect").font(.caption).foregroundStyle(.secondary).lineSpacing(3)
+                Label("A little, every day", systemImage: "sun.max").appFont(.subheadline, weight: .medium)
+                Text("3 min recall · 5 min learn\n14 min code · 3 min reflect").appFont(.caption).foregroundStyle(.secondary).lineSpacing(3)
                 Divider().padding(.vertical, 5)
                 Button { model.exportProgress() } label: { Label("Export learning backup", systemImage: "square.and.arrow.up") }
-                    .buttonStyle(.borderless).font(.caption)
+                    .buttonStyle(.borderless).appFont(.caption)
             }.padding(18)
         }
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.45))
@@ -1088,9 +1178,9 @@ struct ChapterBrowserView: View {
     private func trackHeader(_ track: ChapterTrack, chapters: [Chapter]) -> some View {
         let mastered = chapters.filter { model.progress.masteredChapterIDs.contains($0.id) }.count
         return HStack {
-            Text(track.title.uppercased()).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            Text(track.title.uppercased()).appFont(.caption, weight: .semibold).foregroundStyle(.secondary)
             Spacer()
-            Text("\(mastered)/\(chapters.count)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+            Text("\(mastered)/\(chapters.count)").appFont(.caption, monospacedDigit: true).foregroundStyle(.secondary)
         }
         .padding(.horizontal, 10).padding(.top, 10).padding(.bottom, 2)
         .accessibilityElement(children: .ignore)
@@ -1109,14 +1199,14 @@ struct ChapterBrowserView: View {
                 ZStack {
                     RoundedRectangle(cornerRadius: 8).fill(mastered ? Color.teal.opacity(0.16) : Color.secondary.opacity(0.09)).frame(width: 30, height: 30)
                     if mastered { Image(systemName: "checkmark").foregroundStyle(.teal) }
-                    else { Text(String(format: "%02d", number)).font(.caption.monospacedDigit().bold()).foregroundStyle(unlocked ? .primary : .secondary) }
+                    else { Text(String(format: "%02d", number)).appFont(.caption, weight: .bold, monospacedDigit: true).foregroundStyle(unlocked ? .primary : .secondary) }
                 }
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(chapter.title).font(.subheadline.weight(.medium))
-                    Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(unlocked ? 2 : 3)
+                    Text(chapter.title).appFont(.subheadline, weight: .medium)
+                    Text(detail).appFont(.caption).foregroundStyle(.secondary).lineLimit(unlocked ? 2 : 3)
                 }
                 Spacer(minLength: 0)
-                if !unlocked { Image(systemName: "lock.fill").font(.caption2).foregroundStyle(.tertiary).accessibilityHidden(true) }
+                if !unlocked { Image(systemName: "lock.fill").appFont(.caption2).foregroundStyle(.tertiary).accessibilityHidden(true) }
             }
             .padding(10).frame(maxWidth: .infinity, alignment: .leading)
             .background(selected ? Color.teal.opacity(0.10) : .clear, in: RoundedRectangle(cornerRadius: 10))

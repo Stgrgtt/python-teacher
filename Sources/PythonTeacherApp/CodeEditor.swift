@@ -30,6 +30,7 @@ struct CodeEditorFindCommands: Commands {
 struct CodeEditor: NSViewRepresentable {
     @Binding var text: String
     var editable: Bool = true
+    var fontSize: CGFloat = 14
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -51,7 +52,7 @@ struct CodeEditor: NSViewRepresentable {
         editor.isVerticallyResizable = true
         editor.isHorizontallyResizable = true
         editor.autoresizingMask = [.width]
-        editor.font = .monospacedSystemFont(ofSize: 14, weight: .regular)
+        editor.font = .monospacedSystemFont(ofSize: fontSize, weight: .regular)
         editor.textContainerInset = NSSize(width: 14, height: 16)
         editor.backgroundColor = .textBackgroundColor
         editor.insertionPointColor = .labelColor
@@ -84,6 +85,10 @@ struct CodeEditor: NSViewRepresentable {
         context.coordinator.parent = self
         guard let editor = scroll.documentView as? PythonTextView else { return }
         editor.isEditable = editable
+        if editor.font?.pointSize != fontSize {
+            editor.font = .monospacedSystemFont(ofSize: fontSize, weight: .regular)
+            (scroll.verticalRulerView as? LineNumberRuler)?.fontSize = max(10, fontSize - 3)
+        }
         if !editor.hasMarkedText(), editor.string != text {
             editor.string = text
             editor.undoManager?.removeAllActions()
@@ -108,21 +113,43 @@ struct CodeEditor: NSViewRepresentable {
             let range = NSRange(location: 0, length: editor.string.utf16.count)
             layout.removeTemporaryAttribute(.foregroundColor, forCharacterRange: range)
             if range.length < 100_000 {
-                let patterns: [(String, NSColor)] = [
-                    (#"\b(False|None|True|and|as|assert|async|await|break|class|continue|def|del|elif|else|except|finally|for|from|global|if|import|in|is|lambda|nonlocal|not|or|pass|raise|return|try|while|with|yield)\b"#, .systemPurple),
-                    (#"\b(print|len|range|str|int|float|bool|list|dict|set|sum|min|max|sorted|enumerate|zip|isinstance|ValueError|TypeError)\b"#, .systemTeal),
-                    (#"\b\d+(\.\d+)?\b"#, .systemOrange),
-                    (#"("([^"\\]|\\.)*"|'([^'\\]|\\.)*')"#, .systemGreen),
-                    (#"#[^\n]*"#, .secondaryLabelColor)
-                ]
-                for (pattern, color) in patterns {
-                    guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
-                    for match in regex.matches(in: editor.string, range: range) {
-                        layout.addTemporaryAttribute(.foregroundColor, value: color, forCharacterRange: match.range)
-                    }
+                PythonSyntax.enumerateColors(in: editor.string) { range, color in
+                    layout.addTemporaryAttribute(.foregroundColor, value: color, forCharacterRange: range)
                 }
             }
         }
+    }
+}
+
+/// Lightweight Python coloring shared by the editor and read-only code samples.
+enum PythonSyntax {
+    private static let rules: [(NSRegularExpression, NSColor)] = [
+        (#"\b(False|None|True|and|as|assert|async|await|break|class|continue|def|del|elif|else|except|finally|for|from|global|if|import|in|is|lambda|nonlocal|not|or|pass|raise|return|try|while|with|yield)\b"#, NSColor.systemPurple),
+        (#"\b(print|len|range|str|int|float|bool|list|dict|set|sum|min|max|sorted|enumerate|zip|isinstance|ValueError|TypeError)\b"#, .systemTeal),
+        (#"\b\d+(\.\d+)?\b"#, .systemOrange),
+        (#"("([^"\\]|\\.)*"|'([^'\\]|\\.)*')"#, .systemGreen),
+        (#"#[^\n]*"#, .secondaryLabelColor)
+    ].compactMap { pattern, color in (try? NSRegularExpression(pattern: pattern)).map { ($0, color) } }
+
+    /// Later rules win, so strings and comments override keywords inside them.
+    static func enumerateColors(in source: String, _ body: (NSRange, NSColor) -> Void) {
+        let range = NSRange(location: 0, length: source.utf16.count)
+        for (regex, color) in rules {
+            for match in regex.matches(in: source, range: range) { body(match.range, color) }
+        }
+    }
+
+    static func highlighted(_ source: String) -> AttributedString {
+        let text = NSMutableAttributedString(string: source)
+        enumerateColors(in: source) { range, color in text.addAttribute(.foregroundColor, value: color, range: range) }
+        var result = AttributedString(source)
+        text.enumerateAttribute(.foregroundColor, in: NSRange(location: 0, length: text.length)) { value, range, _ in
+            guard let color = value as? NSColor, let bounds = Range(range, in: source),
+                  let lower = AttributedString.Index(bounds.lowerBound, within: result),
+                  let upper = AttributedString.Index(bounds.upperBound, within: result) else { return }
+            result[lower..<upper].foregroundColor = Color(nsColor: color)
+        }
+        return result
     }
 }
 
@@ -175,6 +202,7 @@ final class PythonTextView: NSTextView {
 
 final class LineNumberRuler: NSRulerView {
     weak var editor: NSTextView?
+    var fontSize: CGFloat = 11 { didSet { needsDisplay = true } }
 
     init(textView: NSTextView, scrollView: NSScrollView) {
         editor = textView
@@ -194,7 +222,7 @@ final class LineNumberRuler: NSRulerView {
         let glyphs = layout.glyphRange(forBoundingRect: visible.offsetBy(dx: -editor.textContainerOrigin.x, dy: -editor.textContainerOrigin.y), in: container)
         let start = layout.numberOfGlyphs == 0 ? 0 : min(layout.characterIndexForGlyph(at: min(glyphs.location, layout.numberOfGlyphs - 1)), source.length)
         var line = source.substring(to: start).filter { $0 == "\n" }.count + 1
-        let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular), .foregroundColor: NSColor.tertiaryLabelColor]
+        let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.monospacedDigitSystemFont(ofSize: fontSize, weight: .regular), .foregroundColor: NSColor.tertiaryLabelColor]
         layout.enumerateLineFragments(forGlyphRange: glyphs) { _, used, _, _, _ in
             let label = "\(line)" as NSString
             let y = used.minY + editor.textContainerOrigin.y - visible.minY
