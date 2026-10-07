@@ -6,9 +6,27 @@ extension Curriculum {
         lesson: """
         # Choose a structure that fits
 
-        Lists store ordered items and retain duplicates. A **dictionary** stores named entries called key-value pairs. Curly braces create it; a colon separates each key from its value, and commas separate entries. For example, `{"name": "Mira", "points": 4}` has two string keys, name and points. The values can have different types. Unlike braces inside f-strings, these braces build a container; they do not insert text.
+        Lists store ordered items and retain duplicates. Sometimes you need something different: values you can look up by name.
 
-        A **record** is a group of related information about one item, often represented by a dictionary. A field is one named entry in that record. Brackets after a dictionary perform lookup by key, not by numeric position. Assignment to a key adds or replaces that entry. `{}` is an empty dictionary.
+        ### Dictionaries
+
+        A **dictionary** stores named entries called **key-value pairs**.
+
+        - Curly braces `{}` create it.
+        - A colon separates each key from its value.
+        - Commas separate entries.
+
+        For example, `{"name": "Mira", "points": 4}` has two string keys, `name` and `points`. The values can have different types.
+
+        > **Note:** Unlike braces inside f-strings, these braces build a container; they do not insert text.
+
+        ### Records and fields
+
+        A **record** is a group of related information about one item, often represented by a dictionary. A **field** is one named entry in that record.
+
+        - Brackets after a dictionary perform lookup by key, not by numeric position.
+        - Assignment to a key adds or replaces that entry.
+        - `{}` on its own is an empty dictionary.
 
         ```python
         record = {"name": "Mira", "points": 4}
@@ -19,11 +37,24 @@ extension Curriculum {
         print(record["points"])
         ```
 
-        This displays Mira and 6. A key can appear only once in a dictionary: assigning it again replaces its value. Reading a missing key with brackets raises `KeyError`, an error that stops normal execution. `record.get("bonus", 0)` instead returns the value if bonus exists, or the supplied default 0 if it does not. It does not add the missing key. Without a default argument, get returns None for a missing key.
+        ```text
+        Mira
+        6
+        ```
+
+        A key can appear only once in a dictionary: assigning it again replaces its value.
+
+        ### Missing keys
+
+        - Reading a missing key with brackets raises `KeyError`, an error that stops normal execution.
+        - `record.get("bonus", 0)` instead returns the value if `bonus` exists, or the supplied default `0` if it does not. It does not add the missing key.
+        - Without a default argument, `get` returns `None` for a missing key.
 
         ## Count repeated categories
 
-        A category label is just text used to group items. A dictionary can remember a count under each label. On its first appearance, the count starts at zero; later appearances read the accumulated count.
+        A category label is just text used to group items. A dictionary can remember a count under each label.
+
+        On a label's first appearance, its count starts at zero; later appearances read the accumulated count.
 
         ```python
         colors = ["blue", "red", "blue"]
@@ -34,9 +65,21 @@ extension Curriculum {
         print(counts)
         ```
 
-        The result has blue mapped to 2 and red mapped to 1. The key comes from the variable color, not the literal string `'color'`. This is a suitable use of a default: an unseen category really does start at zero. Do not use defaults to hide missing required input fields.
+        ```text
+        {'blue': 2, 'red': 1}
+        ```
 
-        A `for` loop over a dictionary visits its **keys**, one per visit, in the order they were first added. Use each key with brackets to read its value. `counts.keys()` supplies the same keys explicitly, and `counts.values()` supplies only the values, which is handy when you need a total but not the labels.
+        - `blue` is mapped to 2 and `red` to 1.
+        - The key comes from the variable `color`, not the literal string `'color'`.
+
+        > **Tip:** This is a suitable use of a default, because an unseen category really does start at zero. Do not use defaults to hide missing required input fields.
+
+        ### Looping over a dictionary
+
+        A `for` loop over a dictionary visits its **keys**, one per visit, in the order they were first added. Use each key with brackets to read its value.
+
+        - `counts.keys()` supplies the same keys explicitly.
+        - `counts.values()` supplies only the values, which is handy when you need a total but not the labels.
 
         ```python
         counts = {"red": 1, "blue": 2}
@@ -51,11 +94,32 @@ extension Curriculum {
         print(total)
         ```
 
-        This displays red 1, then blue 2, then `['red', 'blue']` and 3. The loop variable color holds a key such as `'red'`, never the whole entry.
+        ```text
+        red 1
+        blue 2
+        ['red', 'blue']
+        3
+        ```
+
+        The loop variable `color` holds a key such as `'red'`, never the whole entry.
 
         ## Convert JSON text into Python values
 
-        JSON is a text format for exchanging structured information, not a Python dictionary. A JSON array corresponds to a list; an object corresponds to a dictionary. A payload means the text supplied to an operation, not a filename. `import json` makes Python's built-in json module available under that name. A module is a collection of useful code. `json.loads(payload)` calls its loads function to parse (read and convert) JSON text into Python values. `json.dumps(value)` converts Python values back into JSON text. No installation, file access, or network request is involved.
+        **JSON** is a text format for exchanging structured information. It is text, not a Python dictionary.
+
+        - A JSON **array** corresponds to a Python list.
+        - A JSON **object** corresponds to a Python dictionary.
+
+        A **payload** means the text supplied to an operation, not a filename.
+
+        ### The json module
+
+        A **module** is a collection of useful code. `import json` makes Python's built-in `json` module available under that name.
+
+        - `json.loads(payload)` calls its `loads` function to **parse** (read and convert) JSON text into Python values.
+        - `json.dumps(value)` converts Python values back into JSON text.
+
+        No installation, file access, or network request is involved.
 
         ```python
         import json
@@ -69,13 +133,35 @@ extension Curriculum {
         encoded = json.dumps(counts, sort_keys=True)
         ```
 
-        In this block, the outer single quotes make payload a Python string. The double quotes inside belong to JSON, which requires double-quoted object keys and text values. JSON spells Boolean values `true` and `false`, and its no-value marker is `null`; parsing turns these into Python True, False, and None. The argument `sort_keys=True` is a named option asking dumps to output dictionary keys in sorted order. This example saves encoded text; the exercises will say whether their result should be Python data or JSON text.
+        This block prints nothing; it saves the JSON text `{"orbit": 1}` in `encoded`.
 
-        Lists and dictionaries are **mutable**: operations can change their contents. If a function receives a list, changing it can surprise its caller. Build a fresh result when the specification promises unchanged input. Dictionary equality compares contents, not formatting or insertion order.
+        ### Reading the example
+
+        - The outer single quotes make `payload` a Python string.
+        - The double quotes inside belong to JSON, which requires double-quoted object keys and text values.
+        - JSON spells Boolean values `true` and `false`, and its no-value marker is `null`. Parsing turns these into Python `True`, `False`, and `None`.
+        - The argument `sort_keys=True` is a named option asking `dumps` to output dictionary keys in sorted order.
+
+        The exercises will say whether their result should be Python data or JSON text.
+
+        ### Mutable containers
+
+        Lists and dictionaries are **mutable**: operations can change their contents. If a function receives a list, changing it can surprise its caller.
+
+        > **Remember:** Build a fresh result when the specification promises unchanged input.
+
+        Dictionary equality compares contents, not formatting or insertion order.
 
         ## Group fixed values in a tuple
 
-        A **tuple** is an ordered group of values written with parentheses and commas, such as `("orbit", 0.8)`. Like a list, it uses zero-based indexing and works with `len`. Unlike a list, a tuple is **immutable**: after creating it you cannot replace, add, or remove items. It has no append, and `pair[0] = "nova"` raises `TypeError`. Use a tuple for a small fixed group where each position has a meaning, such as a name followed by a score.
+        A **tuple** is an ordered group of values written with parentheses and commas, such as `("orbit", 0.8)`.
+
+        Like a list, it uses zero-based indexing and works with `len`. Unlike a list, a tuple is **immutable**: after creating it you cannot replace, add, or remove items.
+
+        - A tuple has no `append`.
+        - `pair[0] = "nova"` raises `TypeError`.
+
+        Use a tuple for a small fixed group where each position has a meaning, such as a name followed by a score.
 
         ```python
         pair = ("orbit", 0.8)
@@ -90,7 +176,26 @@ extension Curriculum {
         print(result)
         ```
 
-        This displays orbit, 0.8, 2, orbit, and 0.8. The line `model, result = pair` is **unpacking**: it assigns the first item to model and the second to result in one step. The number of names on the left must match the number of items, otherwise Python raises `ValueError`. A tuple with one item needs a trailing comma, `(5,)`; without the comma, `(5)` is just the number 5 in parentheses. `in` asks whether a tuple contains a value: `"b" in ("a", "b")` is True.
+        ```text
+        orbit
+        0.8
+        2
+        orbit
+        0.8
+        ```
+
+        ### Unpacking
+
+        The line `model, result = pair` is **unpacking**: it assigns the first item to `model` and the second to `result` in one step.
+
+        > **Watch out:** The number of names on the left must match the number of items, otherwise Python raises `ValueError`.
+
+        ### Other tuple details
+
+        - A tuple with one item needs a trailing comma: `(5,)`. Without the comma, `(5)` is just the number 5 in parentheses.
+        - `in` asks whether a tuple contains a value: `"b" in ("a", "b")` is `True`.
+
+        ### Comparing tuples
 
         ```python
         print((1, "b") < (2, "a"))
@@ -98,13 +203,26 @@ extension Curriculum {
         print((2, "a") == (2, "a"))
         ```
 
-        All three lines display True. Tuples compare item by item: Python compares the first items, and only if they are equal does it compare the second items, and so on. In the first line 1 is smaller than 2, so the letters are never compared. This ordering rule makes tuples useful for sorting by more than one value.
+        ```text
+        True
+        True
+        True
+        ```
+
+        Tuples compare item by item. Python compares the first items, and only if they are equal does it compare the second items, and so on.
+
+        In the first line, 1 is smaller than 2, so the letters are never compared. This ordering rule makes tuples useful for sorting by more than one value.
 
         ## Sort without changing the input
 
-        `sorted(items)` returns a new list in ascending (smallest-first) order. `items.sort()` changes the original list and returns None, so it is unsuitable when inputs must stay unchanged. Text sorts by Python's character ordering, which is case-sensitive, not a language-aware alphabetical rule. Ascending names put `'A'` before `'a'`.
+        - `sorted(items)` returns a new list in ascending (smallest-first) order.
+        - `items.sort()` changes the original list and returns `None`, so it is unsuitable when inputs must stay unchanged.
 
-        Because a dictionary supplies its keys when visited, `sorted(counts)` returns a new list of the keys in ascending order, and `for key in sorted(counts):` visits the entries in a predictable key order no matter how they were added.
+        Text sorts by Python's character ordering, which is case-sensitive, not a language-aware alphabetical rule. Ascending names put `'A'` before `'a'`.
+
+        ### Sorting dictionary keys
+
+        Because a dictionary supplies its keys when visited, `sorted(counts)` returns a new list of the keys in ascending order. `for key in sorted(counts):` visits the entries in a predictable key order, no matter how they were added.
 
         ```python
         totals = {"orbit": 3, "atlas": 5}
@@ -113,9 +231,20 @@ extension Curriculum {
         print(sorted(totals))
         ```
 
-        This displays atlas 5, then orbit 3, then `['atlas', 'orbit']`. The dictionary itself is unchanged.
+        ```text
+        atlas 5
+        orbit 3
+        ['atlas', 'orbit']
+        ```
 
-        For records, tell sorted which value to compare by supplying a function with the named argument `key`. Python calls that function once per record. A tuple key supports tie-breaking: compare its first part, then its second part only if the first parts are equal. Negating a numeric value with `-` reverses its numeric order when sorted ascending.
+        The dictionary itself is unchanged.
+
+        ### Sorting records with a key function
+
+        For records, tell `sorted` which value to compare by supplying a function with the named argument `key`. Python calls that function once per record.
+
+        - A tuple key supports tie-breaking: compare its first part, then its second part only if the first parts are equal.
+        - Negating a numeric value with `-` reverses its numeric order when sorted ascending.
 
         ```python
         parcels = [{"name": "blue", "weight": 2}, {"name": "amber", "weight": 2}, {"name": "red", "weight": 5}]
@@ -128,9 +257,26 @@ extension Curriculum {
         print(names)
         ```
 
-        This displays `['red', 'amber', 'blue']`: largest weight first, then ascending name for the tie. Pass the function name as key, without calling it yourself; sorted supplies each record. Reading the dictionaries is safe, but changing them would also change the original records.
+        ```text
+        ['red', 'amber', 'blue']
+        ```
 
-        Reference code may use `lambda parcel: (-parcel['weight'], parcel['name'])` instead of a named helper. `lambda` creates a small unnamed function in one expression: the parameter is between `lambda` and the colon, and the value it returns is after the colon. There is no `def`, no name, and no `return` keyword. It is most useful exactly here, as a short key argument.
+        The result is largest weight first, then ascending name for the tie.
+
+        - Pass the function name as `key=parcel_order`, without calling it yourself; `sorted` supplies each record.
+        - Reading the dictionaries is safe, but changing them would also change the original records.
+
+        ### Short key functions with lambda
+
+        Reference code may use `lambda parcel: (-parcel['weight'], parcel['name'])` instead of a named helper.
+
+        `lambda` creates a small unnamed function in one expression:
+
+        - The parameter goes between `lambda` and the colon.
+        - The value it returns goes after the colon.
+        - There is no `def`, no name, and no `return` keyword.
+
+        It is most useful exactly here, as a short key argument.
 
         ```python
         words = ["kiwi", "fig", "banana"]
@@ -141,11 +287,25 @@ extension Curriculum {
         print(words)
         ```
 
-        This displays `['fig', 'kiwi', 'banana']`, then `['banana', 'fig', 'kiwi']`, then the unchanged original `['kiwi', 'fig', 'banana']`. A lambda is never required: a def helper, as in the parcel example, does the same job.
+        ```text
+        ['fig', 'kiwi', 'banana']
+        ['banana', 'fig', 'kiwi']
+        ['kiwi', 'fig', 'banana']
+        ```
+
+        The last line shows the original list is unchanged.
+
+        > **Note:** A lambda is never required. A `def` helper, as in the parcel example, does the same job.
 
         ## Keep unique names when requested
 
-        A **set** holds distinct values without duplicates. Create an empty one with `set()`, not `{}` (which is a dictionary). `add` inserts a value; adding it again has no effect. `len` counts the distinct values, and `in` or `not in` asks whether a value is present. Sets do not promise any order and cannot be indexed. Convert one with sorted when you need a predictable ordered list.
+        A **set** holds distinct values without duplicates.
+
+        - Create an empty one with `set()`, not `{}` (which is a dictionary).
+        - `add` inserts a value; adding it again has no effect.
+        - `len` counts the distinct values.
+        - `in` or `not in` asks whether a value is present.
+        - Sets do not promise any order and cannot be indexed. Convert one with `sorted` when you need a predictable ordered list.
 
         ```python
         teams = set()
@@ -159,7 +319,20 @@ extension Curriculum {
         print(ordered_teams)
         ```
 
-        This displays 2, True, False, then `['amber', 'blue']`. The second "blue" was ignored. `set(items)` builds a set from a list's items, which removes duplicates in one step but loses the original order. To remove duplicates while keeping first-appearance order, remember what you have seen in a set and build a new list with a loop:
+        ```text
+        2
+        True
+        False
+        ['amber', 'blue']
+        ```
+
+        The second `"blue"` was ignored.
+
+        ### Removing duplicates
+
+        `set(items)` builds a set from a list's items. This removes duplicates in one step but loses the original order.
+
+        To remove duplicates while keeping first-appearance order, remember what you have seen in a set and build a new list with a loop:
 
         ```python
         labels = ["chat", "embed", "chat", "rank"]
@@ -173,30 +346,155 @@ extension Curriculum {
         print(sorted(set(labels)))
         ```
 
-        This displays `['chat', 'embed', 'rank']` and `['chat', 'embed', 'rank']`; the first comes from input order, the second from sorting. `in` also works with lists, and with dictionaries it checks keys: `"name" in record`. Use a set only when duplicates should disappear; several exercises explicitly require retaining them.
+        ```text
+        ['chat', 'embed', 'rank']
+        ['chat', 'embed', 'rank']
+        ```
+
+        The first line comes from input order, the second from sorting.
+
+        `in` also works with lists, and with dictionaries it checks keys: `"name" in record`.
+
+        > **Watch out:** Use a set only when duplicates should disappear. Several exercises explicitly require retaining them.
 
         ## Debug the shape
 
-        Before calculating, inspect the structure: is this JSON text, a list of records, or one dictionary? Follow one record through parsing, key lookup, aggregation, and output. Test repeated categories, missing categories in your accumulator, empty collections, and ties. Keep representation errors separate from arithmetic errors. The next chapter adds explicit validation for untrusted shapes and values.
+        Before calculating, inspect the structure. Is this JSON text, a list of records, or one dictionary?
+
+        Follow one record through each stage:
+
+        1. parsing
+        2. key lookup
+        3. aggregation
+        4. output
+
+        Test these cases:
+
+        - repeated categories
+        - categories missing from your accumulator
+        - empty collections
+        - ties
+
+        Keep representation errors separate from arithmetic errors. The next chapter adds explicit validation for untrusted shapes and values.
         """,
         exercises: [
-            exercise("collections-count", "Count synthetic task labels", "Goal:\nCount how often each task label appears. A label is just a string used as a category name; its occurrence count is how many list items have that exact text.\n\nStarting code:\ndef count_labels(labels): is the required function. return {} currently returns an empty dictionary for every input and is a placeholder.\n\nYour task:\n1. Keep the function name and parameter. labels is a list of strings. Leave that list and all of its text unchanged.\n2. Return a new dictionary whose keys are the exact labels and whose values are integer occurrence counts. Merge repeated identical labels into one key with their combined count.\n3. Treat different case and whitespace as different labels. The empty string is an ordinary label and must be counted. An empty list returns an empty dictionary.\n4. Compute fresh results for every call. The lesson explains how a dictionary can start an unseen category at zero.\n\nExamples:\ncount_labels([]) returns {}.\ncount_labels(['chat', 'embed', 'chat']) returns {'chat': 2, 'embed': 1}.\ncount_labels(['', 'AI', 'ai', '', ' AI']) returns {'': 2, 'AI': 1, 'ai': 1, ' AI': 1}. Dictionary key order is not important.\n\nCheck:\nChoose Check solution. It checks empty and repeated labels, exact text, repeated calls, and unchanged input. Return a dictionary, not printed output or JSON text.",
+            exercise("collections-count", "Count synthetic task labels", """
+                     Goal:
+                     Count how often each task label appears. A **label** is a string used as a category name; its **occurrence count** is how many list items have exactly that text.
+
+                     Starting code:
+                     - `def count_labels(labels):` is the required function. Keep this line unchanged.
+                     - `return {}` is a placeholder that returns an empty dictionary for every input. Replace it with your work.
+
+                     Your task:
+                     1. Keep the function name `count_labels` and its parameter.
+                     2. Assume `labels` is a list of strings. Leave that list and all of its text unchanged.
+                     3. Build a new dictionary whose keys are the exact labels and whose values are integer occurrence counts. The lesson explains how a dictionary can start an unseen category at zero.
+                     4. Merge repeated identical labels into one key with their combined count.
+                     5. Treat different case and whitespace as different labels. The empty string `''` is an ordinary label and must be counted.
+                     6. Return an empty dictionary for an empty list.
+                     7. Compute fresh results on every call, and return the dictionary.
+
+                     Examples:
+                     - `count_labels([])` returns `{}`
+                     - `count_labels(['chat', 'embed', 'chat'])` returns `{'chat': 2, 'embed': 1}`
+                     - `count_labels(['', 'AI', 'ai', '', ' AI'])` returns `{'': 2, 'AI': 1, 'ai': 1, ' AI': 1}`
+
+                     Dictionary key order is not important.
+
+                     Check:
+                     Choose **Check solution**. It checks empty and repeated labels, exact text, repeated calls, and unchanged input. Return a dictionary, not printed output or JSON text.
+                     """,
                      "def count_labels(labels):\n    return {}\n",
                      "def count_labels(labels):\n    counts = {}\n    for label in labels:\n        counts[label] = counts.get(label, 0) + 1\n    return counts\n",
                      "assert count_labels([]) == {}\nassert count_labels(['chat', 'embed', 'chat']) == {'chat': 2, 'embed': 1}\nlabels = ['', 'AI', 'ai', '', ' AI']\nassert count_labels(labels) == {'': 2, 'AI': 1, 'ai': 1, ' AI': 1}\nassert labels == ['', 'AI', 'ai', '', ' AI']\nassert count_labels(['new']) == {'new': 1}\n",
-                     ["Use the actual label text as a dictionary key so identical labels share a count; do not strip or lowercase the input.", "A label not yet seen needs a starting count of zero. Dictionary get can return that default without a missing-key error.", "On each visit, read the previous count, increase it by one, and save the new count under the same key. Return the completed dictionary only after all labels have been visited."]),
-            exercise("collections-json", "Select models from JSON", "Goal:\nSelect names from invented model evaluation records. A model is a named system; its score describes one evaluation. A threshold is the minimum score required to pass.\n\nStarting code:\nimport json makes Python's built-in JSON tools available. def passing_models(payload, threshold): is the required function; return [] is its placeholder. payload means the supplied JSON text, not a path to a file.\n\nYour task:\n1. Keep the import, function name, and parameter order. payload is valid JSON text containing an array of objects. Each object has a string 'model' field and a finite numeric 'score' field. threshold is a finite number. No malformed-input validation is required.\n2. Return a Python list of the model-name strings whose scores are at least threshold. Exactly equal scores qualify. Read the JSON into Python values before working with its records.\n3. Keep the records' original order and repeated names. Preserve names exactly, including case and spaces. An empty JSON array must return an empty list. Do not change input data or return JSON text.\n\nExamples:\npayload '[]' with threshold 0.8 returns [].\npayload '[{\"model\":\"orbit\",\"score\":0.8},{\"model\":\"nova\",\"score\":0.79},{\"model\":\"orbit\",\"score\":1}]' with threshold 0.8 returns ['orbit', 'orbit'].\n\nCheck:\nChoose Check solution. It checks empty input, exact-threshold inclusion, excluded scores, order, and repeated names. Return the list; printing is optional.",
+                     ["Use the actual label text as a dictionary key so identical labels share a count; do not strip or lowercase the input.", "A label not yet seen needs a starting count of zero. Dictionary `get` can return that default without a missing-key error.", "On each visit, read the previous count, increase it by one, and save the new count under the same key. Return the completed dictionary only after all labels have been visited."]),
+            exercise("collections-json", "Select models from JSON", """
+                     Goal:
+                     Select names from invented model evaluation records. A **model** is a named system; its **score** describes one evaluation. A **threshold** is the minimum score required to pass.
+
+                     Starting code:
+                     - `import json` makes Python's built-in JSON tools available. Keep it.
+                     - `def passing_models(payload, threshold):` is the required function. Keep this line unchanged.
+                     - `return []` is its placeholder. Replace it with your work.
+                     - `payload` means the supplied JSON text, not a path to a file.
+
+                     Your task:
+                     1. Keep the import, the function name `passing_models`, and the parameter order.
+                     2. Assume `payload` is valid JSON text containing an array of objects. Each object has a string `'model'` field and a finite numeric `'score'` field, and `threshold` is a finite number. No malformed-input validation is required.
+                     3. Read the JSON into Python values before working with its records.
+                     4. Collect the model-name strings whose scores are at least `threshold`. Exactly equal scores qualify.
+                     5. Keep the records' original order and repeated names. Preserve names exactly, including case and spaces.
+                     6. Return a Python list. An empty JSON array must return an empty list. Do not change input data or return JSON text.
+
+                     Examples:
+                     - Payload `'[]'` with threshold `0.8` returns `[]`
+                     - Payload `'[{"model":"orbit","score":0.8},{"model":"nova","score":0.79},{"model":"orbit","score":1}]'` with threshold `0.8` returns `['orbit', 'orbit']`
+
+                     Check:
+                     Choose **Check solution**. It checks empty input, exact-threshold inclusion, excluded scores, order, and repeated names. Return the list; printing is optional.
+                     """,
                      "import json\n\ndef passing_models(payload, threshold):\n    return []\n",
                      "import json\n\ndef passing_models(payload, threshold):\n    records = json.loads(payload)\n    names = []\n    for record in records:\n        if record['score'] >= threshold:\n            names.append(record['model'])\n    return names\n",
                      "assert passing_models('[]', 0.8) == []\nassert passing_models('[{\"model\":\"orbit\",\"score\":0.8},{\"model\":\"nova\",\"score\":0.79},{\"model\":\"orbit\",\"score\":1}]', 0.8) == ['orbit', 'orbit']\nassert passing_models('[{\"model\":\"z\",\"score\":0}]', 0) == ['z']\nassert passing_models('[{\"model\":\"z\",\"score\":0}]', 0.1) == []\n",
-                     ["payload is a string. json.loads converts its JSON array into a Python list of record dictionaries; looping over the original string would visit characters instead.", "Within each record, brackets with a string key read that field. Compare the score field with the supplied threshold, including equality.", "Build a new list by appending the model field for each qualifying record. Appending in visit order preserves duplicates and ordering; return the finished list after the loop."]),
-            exercise("collections-rank", "Rank synthetic evaluation records", "Goal:\nRank invented model evaluation records from best score to worst. Each record is a dictionary describing one named model and its score.\n\nStarting code:\ndef rank_models(records): is the required function. return [] is a placeholder. The checker supplies a list of dictionaries, not JSON text.\n\nYour task:\n1. Keep the function name and parameter. Each record has a unique string 'model' and a finite numeric 'score'. Scores may be negative. Other fields may exist; ignore them.\n2. Return a new list containing only the model-name strings, ordered by descending score (highest first). For equal scores, order names ascending using Python's normal case-sensitive string ordering, not a custom lowercase ordering.\n3. Leave the input list and its dictionaries unchanged. Preserve the exact names. Return [] for an empty list.\n4. Use the lesson's sort-key concept: a key function returning a tuple can express both ordering rules. An ordinary def helper is fine, and lambda is optional. Then build the list of names with a loop over the sorted records.\n\nExamples:\nFor [{'model': 'zeta', 'score': 0.8}, {'model': 'beta', 'score': 0.9}, {'model': 'alpha', 'score': 0.8}], return ['beta', 'alpha', 'zeta'].\nFor [{'model': 'only', 'score': -1, 'tag': 'demo'}], return ['only'].\n\nCheck:\nChoose Check solution. It checks ordering, equal-score ties, empty input, extra fields, and unchanged records. Return names, not dictionaries or printed text.",
+                     ["`payload` is a string. `json.loads` converts its JSON array into a Python list of record dictionaries; looping over the original string would visit characters instead.", "Within each record, brackets with a string key read that field. Compare the score field with the supplied threshold, including equality.", "Build a new list by appending the model field for each qualifying record. Appending in visit order preserves duplicates and ordering; return the finished list after the loop."]),
+            exercise("collections-rank", "Rank synthetic evaluation records", """
+                     Goal:
+                     Rank invented model evaluation records from best score to worst. Each record is a dictionary describing one named model and its score.
+
+                     Starting code:
+                     - `def rank_models(records):` is the required function. Keep this line unchanged.
+                     - `return []` is a placeholder. Replace it with your work.
+                     - The checker supplies a list of dictionaries, not JSON text.
+
+                     Your task:
+                     1. Keep the function name `rank_models` and its parameter.
+                     2. Assume each record has a unique string `'model'` and a finite numeric `'score'`. Scores may be negative. Other fields may exist; ignore them.
+                     3. Sort the records by descending score (highest first).
+                     4. For equal scores, order names ascending using Python's normal case-sensitive string ordering, not a custom lowercase ordering.
+                     5. Use the lesson's sort-key concept: a key function returning a tuple can express both ordering rules. An ordinary `def` helper is fine, and `lambda` is optional.
+                     6. Build a new list containing only the model-name strings, with a loop over the sorted records. Preserve the exact names.
+                     7. Leave the input list and its dictionaries unchanged. Return `[]` for an empty list.
+
+                     Examples:
+                     - For `[{'model': 'zeta', 'score': 0.8}, {'model': 'beta', 'score': 0.9}, {'model': 'alpha', 'score': 0.8}]`, return `['beta', 'alpha', 'zeta']`
+                     - For `[{'model': 'only', 'score': -1, 'tag': 'demo'}]`, return `['only']`
+
+                     Check:
+                     Choose **Check solution**. It checks ordering, equal-score ties, empty input, extra fields, and unchanged records. Return names, not dictionaries or printed text.
+                     """,
                      "def rank_models(records):\n    return []\n",
                      "def rank_models(records):\n    ordered = sorted(records, key=lambda record: (-record['score'], record['model']))\n    names = []\n    for record in ordered:\n        names.append(record['model'])\n    return names\n",
                      "assert rank_models([]) == []\nrecords = [{'model': 'zeta', 'score': 0.8}, {'model': 'beta', 'score': 0.9}, {'model': 'alpha', 'score': 0.8}]\nassert rank_models(records) == ['beta', 'alpha', 'zeta']\nassert records == [{'model': 'zeta', 'score': 0.8}, {'model': 'beta', 'score': 0.9}, {'model': 'alpha', 'score': 0.8}]\nassert rank_models([{'model': 'only', 'score': -1, 'tag': 'demo'}]) == ['only']\n",
-                     ["The score is the primary ordering rule; the name is consulted only when scores tie. A tuple key compares its parts in that order.", "sorted returns a fresh list and can call a helper function for each record via its key argument. A lambda is merely a shorter way to write that helper.", "Ascending sorting of negated scores puts larger original scores first. Keep the name part in normal ascending order, then build a separate list of names from the ordered records."])
+                     ["The score is the primary ordering rule; the name is consulted only when scores tie. A tuple key compares its parts in that order.", "`sorted` returns a fresh list and can call a helper function for each record via its `key` argument. A lambda is merely a shorter way to write that helper.", "Ascending sorting of negated scores puts larger original scores first. Keep the name part in normal ascending order, then build a separate list of names from the ordered records."])
         ],
-        assessment: exercise("collections-assessment", "Aggregate token usage by model", "Goal:\nReport total text-processing usage for each invented model. Tokens are counted text units. Each record describes some usage by a named model; the same name can appear in several records.\n\nStarting code:\nimport json and def usage_totals(payload): are supplied. return {} is the placeholder body. payload is JSON text, not a file path.\n\nYour task:\n1. Keep the function name and parameter. Input is valid JSON containing a list of records, each with string 'model' and nonnegative integer 'tokens' fields. No malformed-input validation is required. Preserve the supplied data.\n2. Return a Python dictionary mapping each exact model-name string to its integer total tokens across all its records. Repeated names belong to the same total. Case and whitespace are significant; do not clean or rename models.\n3. Include names with zero total. An empty input array must return {}. Return the dictionary itself, not JSON text or printed output.\n\nExamples:\nusage_totals('[]') returns {}.\nFor '[{\"model\":\"orbit\",\"tokens\":12},{\"model\":\"nova\",\"tokens\":0},{\"model\":\"orbit\",\"tokens\":8}]', return {'orbit': 20, 'nova': 0}.\nFor '[{\"model\":\"A\",\"tokens\":1},{\"model\":\"a\",\"tokens\":2}]', return {'A': 1, 'a': 2}. Key order is not important.\n\nCheck:\nComplete the theory questions and written explanation, then choose Submit assessment. It checks empty input, repeated names, zero totals, and case-sensitive grouping. Work independently without hints or solutions.",
+        assessment: exercise("collections-assessment", "Aggregate token usage by model", """
+                             Goal:
+                             Report total text-processing usage for each invented model. **Tokens** are counted units of text. Each record describes some usage by a named model, and the same name can appear in several records.
+
+                             Starting code:
+                             - `import json` and `def usage_totals(payload):` are supplied. Keep both lines unchanged.
+                             - `return {}` is the placeholder body. Replace it with your work.
+                             - `payload` is JSON text, not a file path.
+
+                             Your task:
+                             1. Keep the function name `usage_totals` and its parameter.
+                             2. Assume the input is valid JSON containing a list of records, each with a string `'model'` field and a nonnegative integer `'tokens'` field. No malformed-input validation is required. Preserve the supplied data.
+                             3. Build a Python dictionary mapping each exact model-name string to its integer total tokens across all its records. Repeated names belong to the same total.
+                             4. Treat case and whitespace as significant; do not clean or rename models.
+                             5. Include names whose total is zero. An empty input array must return `{}`.
+                             6. Return the dictionary itself, not JSON text or printed output.
+
+                             Examples:
+                             - `usage_totals('[]')` returns `{}`
+                             - For `'[{"model":"orbit","tokens":12},{"model":"nova","tokens":0},{"model":"orbit","tokens":8}]'`, return `{'orbit': 20, 'nova': 0}`
+                             - For `'[{"model":"A","tokens":1},{"model":"a","tokens":2}]'`, return `{'A': 1, 'a': 2}`
+
+                             Key order is not important.
+
+                             Check:
+                             Complete the theory questions and written explanation, then choose **Submit assessment**. It checks empty input, repeated names, zero totals, and case-sensitive grouping. Work independently, without hints or solutions.
+                             """,
                              "import json\n\ndef usage_totals(payload):\n    return {}\n",
                              "import json\n\ndef usage_totals(payload):\n    totals = {}\n    for record in json.loads(payload):\n        model = record['model']\n        totals[model] = totals.get(model, 0) + record['tokens']\n    return totals\n",
                              "assert usage_totals('[]') == {}\nassert usage_totals('[{\"model\":\"orbit\",\"tokens\":12},{\"model\":\"nova\",\"tokens\":0},{\"model\":\"orbit\",\"tokens\":8}]') == {'orbit': 20, 'nova': 0}\nassert usage_totals('[{\"model\":\"A\",\"tokens\":1},{\"model\":\"a\",\"tokens\":2}]') == {'A': 1, 'a': 2}\nassert usage_totals('[{\"model\":\"solo\",\"tokens\":0}]') == {'solo': 0}\n",

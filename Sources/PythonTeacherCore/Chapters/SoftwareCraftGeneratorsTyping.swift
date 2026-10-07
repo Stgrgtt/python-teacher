@@ -7,11 +7,33 @@ extension Curriculum {
         lesson: """
         # Produce values one at a time
 
-        A list holds all of its values at once. That is convenient, but sometimes you want values one at a time instead: a log may be too large to keep in memory, each result may be expensive to compute, or a sequence (such as "request 1, request 2, request 3, …") may have no natural end. This chapter shows the machinery that every `for` loop already uses, how to build it yourself with a class, and the shorter `yield` syntax that Python offers for the same job. It finishes with ready-made tools from the standard-library module `itertools`. Every code block runs on its own.
+        A list holds all of its values at once. That is convenient, but sometimes you want values one at a time instead.
+
+        Three common reasons:
+
+        - A log may be too large to keep in memory.
+        - Each result may be expensive to compute.
+        - A sequence (such as "request 1, request 2, request 3, …") may have no natural end.
+
+        This chapter shows the machinery that every `for` loop already uses, and how to build it yourself with a class. Then it introduces the shorter `yield` syntax that Python offers for the same job.
+
+        It finishes with ready-made tools from the standard-library module `itertools`. Every code block runs on its own.
 
         ## Iterables and iterators: iter and next
 
-        An **iterable** is any value a `for` loop can visit: lists, strings, tuples, dictionaries, sets, and `range(...)` are all iterables. An **iterator** is a separate helper object that remembers a position and hands out the next value each time you ask. The built-in function `iter(iterable)` returns a fresh iterator for an iterable. The built-in function `next(iterator)` asks that iterator for its next value. When nothing is left, `next` raises the exception **StopIteration**. That exception is not a bug: it is the agreed signal for "finished".
+        ### Two kinds of object
+
+        - An **iterable** is any value a `for` loop can visit. Lists, strings, tuples, dictionaries, sets, and `range(...)` are all iterables.
+        - An **iterator** is a separate helper object that remembers a position and hands out the next value each time you ask.
+
+        Two built-in functions connect them:
+
+        - `iter(iterable)` returns a fresh iterator for an iterable.
+        - `next(iterator)` asks that iterator for its next value.
+
+        When nothing is left, `next` raises the exception **StopIteration**.
+
+        > **Key idea:** StopIteration is not a bug. It is the agreed signal for "finished".
 
         ```python
         models = ["orbit", "nova"]
@@ -25,9 +47,25 @@ extension Curriculum {
         print(models)
         ```
 
-        This displays orbit, nova, no more models, and finally `['orbit', 'nova']`: reading through an iterator does not change the list it came from. `next` also accepts a second argument, a default value returned instead of raising StopIteration: `next(cursor, "done")` would return `"done"` here.
+        ```text
+        orbit
+        nova
+        no more models
+        ['orbit', 'nova']
+        ```
 
-        A `for` loop is shorthand for exactly this conversation. Python calls `iter` once, then calls `next` repeatedly, and stops quietly when StopIteration arrives. The following `while` loop does the same work as `for score in scores: seen.append(score)`:
+        - Reading through an iterator does not change the list it came from.
+        - `next` also accepts a second argument: a default value returned instead of raising StopIteration. Here, `next(cursor, "done")` would return `"done"`.
+
+        ### What a for loop really does
+
+        A `for` loop is shorthand for exactly this conversation:
+
+        1. Python calls `iter` once.
+        2. It calls `next` repeatedly.
+        3. It stops quietly when StopIteration arrives.
+
+        The following `while` loop does the same work as `for score in scores: seen.append(score)`:
 
         ```python
         scores = [0.7, 0.9]
@@ -43,7 +81,16 @@ extension Curriculum {
         print(seen)
         ```
 
-        An iterator is **single-use**. Once it has handed out every value, it is **exhausted** and stays empty. The list itself can produce any number of fresh iterators. Calling `iter` on an iterator returns that same iterator, so a loop over an exhausted iterator simply sees nothing.
+        ```text
+        [0.7, 0.9]
+        ```
+
+        ### Iterators are single-use
+
+        An iterator is **single-use**. Once it has handed out every value, it is **exhausted** and stays empty.
+
+        - The list itself can produce any number of fresh iterators.
+        - Calling `iter` on an iterator returns that same iterator, so a loop over an exhausted iterator simply sees nothing.
 
         ```python
         cursor = iter([1, 2, 3])
@@ -54,14 +101,24 @@ extension Curriculum {
         print(iter(cursor) is cursor)
         ```
 
-        This displays `[1, 2, 3]`, then `[]`, then True. `list(...)` works by looping, so it used up the iterator the first time.
+        ```text
+        [1, 2, 3]
+        []
+        True
+        ```
+
+        `list(...)` works by looping, so it used up the iterator the first time.
 
         ## Write an iterator class
 
-        You already know special double-underscore methods such as `__init__` and `__repr__`, which Python calls for you. Two more make an object an iterator; together they are called the **iterator protocol** (an agreed set of method names):
+        You already know special double-underscore methods such as `__init__` and `__repr__`, which Python calls for you.
+
+        Two more make an object an iterator. Together they are called the **iterator protocol** (an agreed set of method names):
 
         1. `__iter__(self)` must return the iterator. For an object that remembers its own position, that is simply `self`. `iter(obj)` calls it.
         2. `__next__(self)` must return the next value, or `raise StopIteration` when there are no more values. `next(obj)` calls it.
+
+        ### Example: training checkpoints
 
         Here is an iterator for invented evaluation checkpoints: every `every` training steps, up to and including `stop`.
 
@@ -89,11 +146,31 @@ extension Curriculum {
             print("save at step", step)
         ```
 
-        This displays `[4, 8]`, then `[]`, then save at step 3 and save at step 6. The attribute `self.current` is the remembered position. `__next__` saves the value to return, moves the position forward, then returns the saved value. The second `list(steps)` is empty because the same object is already exhausted; a new `Checkpoints(...)` object starts again. Notice the order inside `__next__`: check for the end first, so that every later call keeps raising StopIteration instead of producing a stray value.
+        ```text
+        [4, 8]
+        []
+        save at step 3
+        save at step 6
+        ```
+
+        ### How it works
+
+        - The attribute `self.current` is the remembered position.
+        - `__next__` saves the value to return, moves the position forward, then returns the saved value.
+        - The second `list(steps)` is empty because the same object is already exhausted. A new `Checkpoints(...)` object starts again.
+
+        > **Tip:** Inside `__next__`, check for the end first. Then every later call keeps raising StopIteration instead of producing a stray value.
 
         ## Generator functions with yield
 
-        Writing a class with two methods is a lot of ceremony. A **generator function** is a `def` whose body contains the keyword `yield`. Calling it does **not** run the body. Instead it returns a **generator**: a ready-made iterator object. Each `next` runs the body until it reaches `yield value`, hands out that value, and pauses there, remembering every local variable. The next `next` resumes right after the `yield`. When the body finishes (falls off the end or reaches `return`), Python raises StopIteration for you.
+        Writing a class with two methods is a lot of ceremony. A **generator function** is a `def` whose body contains the keyword `yield`.
+
+        ### How a generator runs
+
+        - Calling a generator function does **not** run the body. Instead it returns a **generator**: a ready-made iterator object.
+        - Each `next` runs the body until it reaches `yield value`, hands out that value, and pauses there, remembering every local variable.
+        - The next `next` resumes right after the `yield`.
+        - When the body finishes (falls off the end or reaches `return`), Python raises StopIteration for you.
 
         ```python
         def checkpoints(stop, every):
@@ -109,7 +186,16 @@ extension Curriculum {
         print(next(gen, "done"))
         ```
 
-        This displays `[4, 8]`, 3, 6, and done. Six lines replace the whole Checkpoints class. A generator is still single-use: call `checkpoints(...)` again for a fresh one.
+        ```text
+        [4, 8]
+        3
+        6
+        done
+        ```
+
+        Six lines replace the whole Checkpoints class. A generator is still single-use: call `checkpoints(...)` again for a fresh one.
+
+        ### Watching the pauses
 
         The pausing is easiest to see by recording events:
 
@@ -131,7 +217,18 @@ extension Curriculum {
         print(events)
         ```
 
-        The displays are `[]` (creating the generator ran nothing), 1, `['started']`, `[2]`, and `['started', 'resumed', 'finished']`. The final `list(gen)` resumed the body, collected 2, then let it finish.
+        ```text
+        []
+        1
+        ['started']
+        [2]
+        ['started', 'resumed', 'finished']
+        ```
+
+        - The first `[]` shows that creating the generator ran nothing.
+        - The final `list(gen)` resumed the body, collected 2, then let it finish.
+
+        ### Infinite generators
 
         Because nothing runs until someone asks, a generator may describe an **infinite** sequence. A `while True` loop with a `yield` inside is safe as long as the code that consumes it decides when to stop, for example with `break`:
 
@@ -150,11 +247,22 @@ extension Curriculum {
         print(taken)
         ```
 
-        This displays `[100, 101, 102]`. Never call `list(...)` on an infinite generator: it would try to collect values forever, and the exercise runner stops any program after 8 seconds.
+        ```text
+        [100, 101, 102]
+        ```
+
+        > **Watch out:** Never call `list(...)` on an infinite generator. It would try to collect values forever, and the exercise runner stops any program after 8 seconds.
 
         ## Generator expressions and laziness
 
-        A **generator expression** looks like a list comprehension written with parentheses instead of square brackets: `(ms for ms in latencies if ms > 200)`. A list comprehension is **eager**: it computes every value immediately and stores them all. A generator expression is **lazy**: it produces a generator that computes each value only when someone asks for it. The function `is_slow` below records every latency (response time in milliseconds) it checks, so you can see when work happens.
+        A **generator expression** looks like a list comprehension written with parentheses instead of square brackets: `(ms for ms in latencies if ms > 200)`.
+
+        - A list comprehension is **eager**: it computes every value immediately and stores them all.
+        - A generator expression is **lazy**: it produces a generator that computes each value only when someone asks for it.
+
+        ### Seeing when work happens
+
+        The function `is_slow` below records every latency (response time in milliseconds) it checks, so you can see when work happens.
 
         ```python
         checked = []
@@ -173,9 +281,27 @@ extension Curriculum {
         print(len(checked))
         ```
 
-        The displays are 0 (creating the generator checked nothing), 340, `[120, 340]` (only enough work to find the first slow value), `[340, 510]`, and 6 (the list comprehension checked all four latencies at once). Laziness saves work when you only need some values, and saves memory because a generator holds only its current state, not every result.
+        ```text
+        0
+        340
+        [120, 340]
+        [340, 510]
+        6
+        ```
 
-        Functions that consume iterables, such as `sum`, `min`, `max`, `any`, `all`, and `list`, accept a generator expression directly. When it is the only argument, you may drop its own parentheses: `sum(ms for ms in latencies)`. `any` and `all` stop asking as soon as the answer is known. Like every generator, a generator expression is single-use:
+        - `0`: creating the generator checked nothing.
+        - `340` and `[120, 340]`: it did only enough work to find the first slow value.
+        - `[340, 510]` and `6`: the list comprehension checked all four latencies at once.
+
+        > **Key idea:** Laziness saves work when you only need some values, and saves memory because a generator holds only its current state, not every result.
+
+        ### Passing generators to functions
+
+        Functions that consume iterables, such as `sum`, `min`, `max`, `any`, `all`, and `list`, accept a generator expression directly.
+
+        - When it is the only argument, you may drop its own parentheses: `sum(ms for ms in latencies)`.
+        - `any` and `all` stop asking as soon as the answer is known.
+        - Like every generator, a generator expression is single-use.
 
         ```python
         latencies = [120, 340, 90, 510]
@@ -186,16 +312,34 @@ extension Curriculum {
         print(any(ms > 500 for ms in latencies))
         ```
 
-        This displays 850, then 0 (the generator was exhausted by the first sum), then 120, then True. Use a list when you need the values more than once; use a generator when you pass through them once.
+        ```text
+        850
+        0
+        120
+        True
+        ```
+
+        The second sum is 0 because the first sum exhausted the generator.
+
+        Use a list when you need the values more than once. Use a generator when you pass through them once.
 
         ## Ready-made tools in itertools
 
-        `itertools` is a standard-library module of iterator tools. `import itertools` makes it available, and you write `itertools.islice(...)`. Python also has a second import form: `from itertools import islice, count` imports just those names, so you can write `islice(...)` directly. Both forms load the same tools. All four tools below are lazy and accept any iterable.
+        `itertools` is a standard-library module of iterator tools. There are two ways to import it:
 
-        - `itertools.islice(iterable, stop)` yields the first `stop` values; `itertools.islice(iterable, start, stop)` skips to position `start` first. It is the lazy cousin of slicing (`items[start:stop]`), works on generators, and does not accept negative positions.
+        - `import itertools` makes the module available, and you write `itertools.islice(...)`.
+        - `from itertools import islice, count` imports just those names, so you can write `islice(...)` directly.
+
+        Both forms load the same tools. All four tools below are lazy and accept any iterable.
+
+        ### The four tools
+
+        - `itertools.islice(iterable, stop)` yields the first `stop` values. `itertools.islice(iterable, start, stop)` skips to position `start` first. It is the lazy cousin of slicing (`items[start:stop]`), works on generators, and does not accept negative positions.
         - `itertools.count(start, step)` yields start, start + step, start + 2 × step, and so on **forever**. Both arguments are optional (defaults 0 and 1). Always bound it with `islice`, `break`, or `zip`.
         - `itertools.chain(first, second, ...)` yields every value of the first iterable, then every value of the next, as one stream, without building a combined list.
         - `itertools.groupby(iterable)` groups **consecutive** equal values. It yields pairs `(key, group)`, where `group` is an iterator over that run of values. An optional `key=` function, like the one `sorted` accepts, decides what counts as equal.
+
+        ### islice and count
 
         ```python
         import itertools
@@ -206,7 +350,17 @@ extension Curriculum {
         print(list(itertools.islice("abcdef", 1, 4)))
         ```
 
-        This displays `[10, 15, 20]`, then 25 (the counter continues where islice stopped), then `['b', 'c', 'd']`. `zip` stops at its shortest input, so pairing an infinite counter with a finite list is safe:
+        ```text
+        [10, 15, 20]
+        25
+        ['b', 'c', 'd']
+        ```
+
+        The counter continues where islice stopped, so the next value is 25.
+
+        ### chain and zip
+
+        `zip` stops at its shortest input, so pairing an infinite counter with a finite list is safe:
 
         ```python
         from itertools import chain, count
@@ -219,9 +373,15 @@ extension Curriculum {
         print(labels)
         ```
 
-        This displays `['1:orbit', '2:nova', '3:lumen']`.
+        ```text
+        ['1:orbit', '2:nova', '3:lumen']
+        ```
 
-        `groupby` only looks at neighbours. To collect all equal items together, sort by the same key first. Each group is an iterator that is used up once groupby moves on, so convert or consume it immediately, for example with `len(list(group))` or `sum(...)`.
+        ### groupby
+
+        `groupby` only looks at neighbours. To collect all equal items together, sort by the same key first.
+
+        > **Watch out:** Each group is an iterator that is used up once groupby moves on. Convert or consume it immediately, for example with `len(list(group))` or `sum(...)`.
 
         ```python
         import itertools
@@ -240,7 +400,13 @@ extension Curriculum {
         print(totals)
         ```
 
-        The first display is `[('ok', 2), ('fail', 1), ('ok', 1)]`: the final ok is a separate run because fail interrupts it. The second is `{'nova': 6, 'orbit': 2}`, because sorting brought both nova records next to each other.
+        ```text
+        [('ok', 2), ('fail', 1), ('ok', 1)]
+        {'nova': 6, 'orbit': 2}
+        ```
+
+        - In the first result, the final ok is a separate run because fail interrupts it.
+        - In the second result, sorting brought both nova records next to each other.
 
         ## Common mistakes and debugging
 
@@ -254,22 +420,29 @@ extension Curriculum {
         exercises: [
             exercise("generators-countdown", "Count down to a training run", """
             Goal:
-            Build an iterator class that counts down the seconds before an invented training run starts. The object itself remembers where it is and hands out one number per next call.
+            Build an iterator class that counts down the seconds before an invented training run starts. The object itself remembers where it is and hands out one number per `next` call.
 
             Starting code:
-            class Countdown is supplied. Its __init__(self, start) saves start in the attribute self.current; keep it unchanged. __iter__ currently returns iter([]) and __next__ immediately raises StopIteration. Both are placeholders: replace the bodies of these two methods.
+            - `class Countdown` is supplied.
+            - Its `__init__(self, start)` saves `start` in the attribute `self.current`. Keep it unchanged.
+            - `__iter__` currently returns `iter([])`. This is a placeholder: replace its body.
+            - `__next__` immediately raises `StopIteration`. This is a placeholder: replace its body.
 
             Your task:
-            1. Keep the class name Countdown, the __init__ method, and the attribute name current. start is an integer and may be zero or negative.
-            2. Make __iter__ return the object itself (self), so that iter(timer) is timer is True.
-            3. Make __next__ return the current number and lower self.current by 1 for the following call. The values come out as start, start - 1, ..., down to 1. Return integers.
-            4. When self.current is 0 or less, __next__ must raise StopIteration. Once finished it stays finished: every later next call raises StopIteration again, and a second loop over the same object produces nothing.
+            1. Keep the class name `Countdown`, the `__init__` method, and the attribute name `current`. `start` is an integer and may be zero or negative.
+            2. Make `__iter__` return the object itself (`self`), so that `iter(timer) is timer` is `True`.
+            3. Make `__next__` return the current number and lower `self.current` by 1 for the following call. The values come out as `start`, `start - 1`, …, down to `1`. Return integers.
+            4. When `self.current` is `0` or less, make `__next__` raise `StopIteration`.
+            5. Once finished it stays finished: every later `next` call raises `StopIteration` again, and a second loop over the same object produces nothing.
 
             Expected result:
-            list(Countdown(3)) is [3, 2, 1]. list(Countdown(0)) and list(Countdown(-2)) are both []. For timer = Countdown(2): next(timer) returns 2, the next call returns 1, the next call raises StopIteration, and list(timer) afterwards is []. next(Countdown(5)) returns 5.
+            - `list(Countdown(3))` is `[3, 2, 1]`.
+            - `list(Countdown(0))` and `list(Countdown(-2))` are both `[]`.
+            - For `timer = Countdown(2)`: `next(timer)` returns `2`, the next call returns `1`, the next call raises `StopIteration`, and `list(timer)` afterwards is `[]`.
+            - `next(Countdown(5))` returns `5`.
 
             Check:
-            Choose Check solution. It loops over Countdown objects, calls iter and next directly, and confirms that StopIteration ends the countdown. Printing is optional.
+            Choose Check solution. It loops over `Countdown` objects, calls `iter` and `next` directly, and confirms that `StopIteration` ends the countdown. Printing is optional.
             """, """
             class Countdown:
                 def __init__(self, start):
@@ -315,28 +488,34 @@ extension Curriculum {
             assert list(Countdown(1)) == [1]
 
             """, [
-                "An iterator needs two methods: __iter__ hands back the object that remembers the position, and __next__ hands out one value per call.",
-                "Countdown already remembers its position in self.current, so __iter__ can return the object itself. __next__ should first decide whether anything is left.",
-                "In __next__: if self.current is 0 or less, raise StopIteration; otherwise keep self.current in a local variable, subtract 1 from self.current, and return the kept value."
+                "An iterator needs two methods: `__iter__` hands back the object that remembers the position, and `__next__` hands out one value per call.",
+                "`Countdown` already remembers its position in `self.current`, so `__iter__` can return the object itself. `__next__` should first decide whether anything is left.",
+                "In `__next__`: if `self.current` is 0 or less, `raise StopIteration`; otherwise keep `self.current` in a local variable, subtract 1 from `self.current`, and return the kept value."
             ], effort: .init(difficulty: .similar, scopeUnits: 2)),
             exercise("generators-ids", "Generate endless request IDs", """
             Goal:
-            Produce request IDs such as 'req-1', 'req-2', 'req-3', ... from a generator that never runs out, and safely take a fixed number of them.
+            Produce request IDs such as `'req-1'`, `'req-2'`, `'req-3'`, … from a generator that never runs out, and safely take a fixed number of them.
 
             Starting code:
-            import itertools is supplied. def request_ids(prefix, start): currently returns iter([]), an empty placeholder iterator. def first_ids(prefix, start, how_many): currently returns []. Replace both bodies.
+            - `import itertools` is supplied. Keep it.
+            - `def request_ids(prefix, start):` currently returns `iter([])`, an empty placeholder iterator. Replace its body.
+            - `def first_ids(prefix, start, how_many):` currently returns `[]` as a placeholder. Replace its body.
 
             Your task:
-            1. Keep the import, both function names, and their parameters. prefix is a string, start is an integer, how_many is a nonnegative integer.
-            2. Turn request_ids into a generator function: its body must use yield (the check confirms this) and must not build a list. It yields the strings f'{prefix}-{number}' for number = start, start + 1, start + 2, and so on, forever. A while True loop with a counter, or a for loop over itertools.count(start), both work.
-            3. Make first_ids return a list of the first how_many IDs from request_ids(prefix, start). Take a bounded slice with itertools.islice and convert it with list. how_many of 0 returns [].
-            4. Never call list(...) directly on request_ids(...): it never ends, and the runner stops a program after 8 seconds.
+            1. Keep the import, both function names, and their parameters. `prefix` is a string, `start` is an integer, and `how_many` is a nonnegative integer.
+            2. Turn `request_ids` into a generator function: its body must use `yield` (the check confirms this) and must not build a list.
+            3. Make `request_ids` yield the strings `f'{prefix}-{number}'` for `number` = `start`, `start + 1`, `start + 2`, and so on, forever. A `while True` loop with a counter, or a `for` loop over `itertools.count(start)`, both work.
+            4. Make `first_ids` return a list of the first `how_many` IDs from `request_ids(prefix, start)`. Take a bounded slice with `itertools.islice` and convert it with `list`. A `how_many` of `0` returns `[]`.
+            5. Never call `list(...)` directly on `request_ids(...)`: it never ends, and the runner stops a program after 8 seconds.
 
             Expected result:
-            first_ids('req', 1, 3) returns ['req-1', 'req-2', 'req-3']. first_ids('run', 0, 0) returns []. first_ids('a', 5, 2500) returns a list of 2500 IDs. For gen = request_ids('job', 7), next(gen) returns 'job-7' and the following next(gen) returns 'job-8'; after 1000 more values the last one is 'job-1008'.
+            - `first_ids('req', 1, 3)` returns `['req-1', 'req-2', 'req-3']`.
+            - `first_ids('run', 0, 0)` returns `[]`.
+            - `first_ids('a', 5, 2500)` returns a list of 2500 IDs.
+            - For `gen = request_ids('job', 7)`: `next(gen)` returns `'job-7'` and the following `next(gen)` returns `'job-8'`. After 1000 more values, the last one is `'job-1008'`.
 
             Check:
-            Choose Check solution. It confirms request_ids is a generator function and reads from it only in bounded amounts. Return values, not printed text.
+            Choose Check solution. It confirms `request_ids` is a generator function and reads from it only in bounded amounts. Return values, not printed text.
             """, """
             import itertools
 
@@ -375,27 +554,35 @@ extension Curriculum {
             assert len(many) == 2500 and many[0] == 'a-5' and many[-1] == 'a-2504'
 
             """, [
-                "A generator function is a def whose body contains yield; calling it returns a generator that produces values only when asked.",
-                "Put yield inside a loop that never ends on its own, such as while True with a counter or a for loop over itertools.count(start), and build each ID with an f-string.",
-                "In first_ids, give request_ids(prefix, start) to itertools.islice with how_many as the stop value, then pass that to list to collect exactly that many IDs."
+                "A generator function is a `def` whose body contains `yield`; calling it returns a generator that produces values only when asked.",
+                "Put `yield` inside a loop that never ends on its own, such as `while True` with a counter or a `for` loop over `itertools.count(start)`, and build each ID with an f-string.",
+                "In `first_ids`, give `request_ids(prefix, start)` to `itertools.islice` with `how_many` as the stop value, then pass that to `list` to collect exactly that many IDs."
             ], effort: .init(difficulty: .similar, scopeUnits: 2)),
             exercise("generators-stream", "Stream evaluation results", """
             Goal:
-            Work with streams of invented evaluation results without reading more than necessary. A score is a number from one model evaluation; a status is a string such as 'ok' or 'fail' recorded by a monitoring job.
+            Work with streams of invented evaluation results without reading more than necessary. A score is a number from one model evaluation; a status is a string such as `'ok'` or `'fail'` recorded by a monitoring job.
 
             Starting code:
-            import itertools is supplied. def first_passing(scores, threshold, n): and def status_runs(morning, evening): both currently return [] as placeholders. Replace both bodies.
+            - `import itertools` is supplied. Keep it.
+            - `def first_passing(scores, threshold, n):` currently returns `[]` as a placeholder. Replace its body.
+            - `def status_runs(morning, evening):` currently returns `[]` as a placeholder. Replace its body.
 
             Your task:
             1. Keep the import, both function names, and their parameters.
-            2. first_passing: scores is any iterable of numbers (a list or a generator). Return a list of the first n scores that are at least threshold (equal scores qualify), in their original order. If fewer than n scores qualify, return all qualifying scores. n is a nonnegative integer; n of 0 returns [].
-            3. first_passing must be lazy: stop reading scores as soon as n qualifying scores have been found. A generator expression with an if condition, bounded by itertools.islice, does this. The check supplies a generator that records each score it hands out.
-            4. status_runs: morning and evening are lists of status strings. Treat them as one stream, morning first and then evening, using itertools.chain. Return a list of (status, run_length) tuples, one for each run of consecutive equal statuses, in stream order. run_length is an integer. A run that continues from the end of morning into the start of evening is one run; equal statuses separated by a different status are separate runs. Two empty lists return [].
-            5. Do not change the input lists.
+            2. In `first_passing`, `scores` is any iterable of numbers (a list or a generator). Return a list of the first `n` scores that are at least `threshold` (equal scores qualify), in their original order.
+            3. If fewer than `n` scores qualify, return all qualifying scores. `n` is a nonnegative integer; an `n` of `0` returns `[]`.
+            4. Make `first_passing` lazy: stop reading scores as soon as `n` qualifying scores have been found. A generator expression with an `if` condition, bounded by `itertools.islice`, does this. The check supplies a generator that records each score it hands out.
+            5. In `status_runs`, `morning` and `evening` are lists of status strings. Treat them as one stream, `morning` first and then `evening`, using `itertools.chain`.
+            6. Return a list of `(status, run_length)` tuples, one for each run of consecutive equal statuses, in stream order. `run_length` is an integer.
+            7. A run that continues from the end of `morning` into the start of `evening` is one run. Equal statuses separated by a different status are separate runs. Two empty lists return `[]`.
+            8. Do not change the input lists.
 
             Expected result:
-            first_passing([0.2, 0.9, 0.95, 0.1, 0.99], 0.9, 2) returns [0.9, 0.95]. first_passing([0.5], 0.9, 3) returns []. For a stream 0.3, 0.92, 0.4, 0.97, 0.99, 0.91 with threshold 0.9 and n 2, the result is [0.92, 0.97] and only the first four scores are read.
-            status_runs(['ok', 'ok'], ['ok', 'fail']) returns [('ok', 3), ('fail', 1)]. status_runs(['fail'], ['ok', 'fail']) returns [('fail', 1), ('ok', 1), ('fail', 1)].
+            - `first_passing([0.2, 0.9, 0.95, 0.1, 0.99], 0.9, 2)` returns `[0.9, 0.95]`.
+            - `first_passing([0.5], 0.9, 3)` returns `[]`.
+            - For a stream `0.3, 0.92, 0.4, 0.97, 0.99, 0.91` with `threshold` `0.9` and `n` `2`, the result is `[0.92, 0.97]` and only the first four scores are read.
+            - `status_runs(['ok', 'ok'], ['ok', 'fail'])` returns `[('ok', 3), ('fail', 1)]`.
+            - `status_runs(['fail'], ['ok', 'fail'])` returns `[('fail', 1), ('ok', 1), ('fail', 1)]`.
 
             Check:
             Choose Check solution. It checks thresholds, short and empty inputs, how many scores were read, runs across the morning/evening boundary, and unchanged lists.
@@ -447,9 +634,9 @@ extension Curriculum {
             assert morning == ['ok'] and evening == ['ok']
 
             """, [
-                "Laziness means asking for one score at a time. A generator expression filters without building a list, and islice stops after a fixed number of values.",
-                "For first_passing, write a generator expression with an if condition and bound it with itertools.islice before converting to a list. For status_runs, join the two lists with itertools.chain before grouping.",
-                "itertools.groupby over the chained stream gives (status, group) pairs for consecutive runs; each group is an iterator, so measure it with len(list(group)) and append a (status, length) tuple."
+                "Laziness means asking for one score at a time. A generator expression filters without building a list, and `islice` stops after a fixed number of values.",
+                "For `first_passing`, write a generator expression with an `if` condition and bound it with `itertools.islice` before converting to a list. For `status_runs`, join the two lists with `itertools.chain` before grouping.",
+                "`itertools.groupby` over the chained stream gives `(status, group)` pairs for consecutive runs; each group is an iterator, so measure it with `len(list(group))` and append a `(status, length)` tuple."
             ], effort: .init(difficulty: .harder, scopeUnits: 2))
         ],
         assessment: exercise("generators-assessment", "Total token batches lazily", """
@@ -457,17 +644,25 @@ extension Curriculum {
         Split a stream of invented token counts into fixed-size batches and total the first few batches, reading no more of the stream than needed. A token count is how many text units one request used; a batch is a group of consecutive requests.
 
         Starting code:
-        import itertools is supplied. def batched(items, size): currently returns iter([]), and def batch_totals(token_counts, size, how_many): currently returns []. Both are placeholders; replace their bodies.
+        - `import itertools` is supplied. Keep it.
+        - `def batched(items, size):` currently returns `iter([])` as a placeholder. Replace its body.
+        - `def batch_totals(token_counts, size, how_many):` currently returns `[]` as a placeholder. Replace its body.
 
         Your task:
-        1. Keep the import, both function names, and their parameters. items may be any iterable (list, string, or generator). size is a positive integer. how_many is a nonnegative integer.
-        2. Make batched a generator function (it must use yield). It yields lists of consecutive items. Every list holds exactly size items, except possibly the last, which holds whatever remains. Never yield an empty list.
-        3. batched must be lazy: yield each batch as soon as it is full, without reading any further items first.
-        4. batch_totals returns a list of the integer sums of the first how_many batches produced by batched(token_counts, size). If there are fewer batches, return the sums of all of them. how_many of 0 returns []. Read only as many token counts as are needed to complete those batches.
+        1. Keep the import, both function names, and their parameters. `items` may be any iterable (list, string, or generator). `size` is a positive integer. `how_many` is a nonnegative integer.
+        2. Make `batched` a generator function (it must use `yield`) that yields lists of consecutive items.
+        3. Every list holds exactly `size` items, except possibly the last, which holds whatever remains. Never yield an empty list.
+        4. Make `batched` lazy: yield each batch as soon as it is full, without reading any further items first.
+        5. Make `batch_totals` return a list of the integer sums of the first `how_many` batches produced by `batched(token_counts, size)`. If there are fewer batches, return the sums of all of them. A `how_many` of `0` returns `[]`.
+        6. Read only as many token counts as are needed to complete those batches.
 
         Expected result:
-        list(batched([1, 2, 3, 4, 5], 2)) is [[1, 2], [3, 4], [5]]. list(batched([], 3)) is []. list(batched('abc', 3)) is [['a', 'b', 'c']].
-        batch_totals([5, 5, 1], 2, 10) returns [10, 1]. batch_totals([1, 2], 1, 0) returns []. For a stream of counts 10, 20, 30, 40, 50, 60, 70 with size 3 and how_many 2, the result is [60, 150] and only the first six counts are read.
+        - `list(batched([1, 2, 3, 4, 5], 2))` is `[[1, 2], [3, 4], [5]]`.
+        - `list(batched([], 3))` is `[]`.
+        - `list(batched('abc', 3))` is `[['a', 'b', 'c']]`.
+        - `batch_totals([5, 5, 1], 2, 10)` returns `[10, 1]`.
+        - `batch_totals([1, 2], 1, 0)` returns `[]`.
+        - For a stream of counts `10, 20, 30, 40, 50, 60, 70` with `size` `3` and `how_many` `2`, the result is `[60, 150]` and only the first six counts are read.
 
         Check:
         Complete the theory questions and written explanation, then choose Submit assessment. It checks full and partial batches, empty input, laziness, and how many values were read. Work independently; hints and solutions are unavailable.
@@ -540,11 +735,29 @@ extension Curriculum {
         lesson: """
         # Describe and wrap functions
 
-        Functions are the main building block of your programs. This chapter treats them as values in their own right. You will label their inputs and outputs with **type hints**, pass functions to other functions, build functions that remember settings, accept any number of arguments, and finally write **decorators**: functions that wrap other functions to add behaviour such as logging or caching. You have already used decorators written by others, such as `@dataclass`, `@property`, and `@abstractmethod`. Every code block runs on its own.
+        Functions are the main building block of your programs. This chapter treats them as values in their own right.
+
+        You will:
+
+        - label their inputs and outputs with **type hints**,
+        - pass functions to other functions,
+        - build functions that remember settings,
+        - accept any number of arguments,
+        - and finally write **decorators**: functions that wrap other functions to add behaviour such as logging or caching.
+
+        You have already used decorators written by others, such as `@dataclass`, `@property`, and `@abstractmethod`. Every code block runs on its own.
 
         ## Type hints describe intent
 
-        A **type hint** (also called an annotation) records which type a parameter, result, or variable is meant to have. Write a colon and a type after a parameter name, and `->` followed by a type before the colon that ends the `def` line. The hint for a variable goes between its name and `=`. You have already written hints such as `name: str` inside a `@dataclass`.
+        A **type hint** (also called an annotation) records which type a parameter, result, or variable is meant to have.
+
+        ### Where hints go
+
+        - After a parameter name: a colon and a type, as in `tokens: int`.
+        - For the result: `->` followed by a type, before the colon that ends the `def` line.
+        - For a variable: between its name and `=`, as in `limit: int = 5`.
+
+        You have already written hints such as `name: str` inside a `@dataclass`.
 
         ```python
         def tokens_per_second(tokens: int, seconds: float) -> float:
@@ -556,11 +769,26 @@ extension Curriculum {
         print(tokens_per_second.__annotations__)
         ```
 
-        This displays 200.0, then 1.5, then `{'tokens': <class 'int'>, 'seconds': <class 'float'>, 'return': <class 'float'>}`. The second call passed a float where the hint says int, and Python ran it anyway: **hints are not enforced at runtime**. They are documentation that people, editors, and separate checking tools read. Python simply stores them in a dictionary called `__annotations__` on the function, with the key `'return'` for the result hint. If you need a real check, you still write `isinstance` and `raise ValueError` as in earlier chapters.
+        ```text
+        200.0
+        1.5
+        {'tokens': <class 'int'>, 'seconds': <class 'float'>, 'return': <class 'float'>}
+        ```
+
+        The second call passed a float where the hint says int, and Python ran it anyway.
+
+        > **Key idea:** Type hints are **not enforced at runtime**. They are documentation that people, editors, and separate checking tools read.
+
+        - Python simply stores hints in a dictionary called `__annotations__` on the function.
+        - The key `'return'` holds the result hint.
+        - If you need a real check, you still write `isinstance` and `raise ValueError` as in earlier chapters.
+
+        ### Hints for containers
 
         For containers, the standard-library module `typing` provides names you can fill in with square brackets. `from typing import Dict, List` imports those names directly, so you can write `List` instead of `typing.List`.
 
-        - `List[str]`: a list whose items are strings. `Dict[str, int]`: a dictionary with string keys and integer values.
+        - `List[str]`: a list whose items are strings.
+        - `Dict[str, int]`: a dictionary with string keys and integer values.
         - `Optional[int]`: an int **or** None. Use it for a result that may be missing.
         - `Iterator[int]`: an iterator, such as a generator, that produces ints.
         - `Callable[[float], float]`: a function taking one float and returning a float (explained in the next section).
@@ -585,9 +813,19 @@ extension Curriculum {
         print(list(evens(5)))
         ```
 
-        This displays nova, None, and `[0, 2, 4]`. Looping over a dictionary, as `max` does here, visits its keys.
+        ```text
+        nova
+        None
+        [0, 2, 4]
+        ```
 
-        A second style uses the built-in names `list` and `dict` with square brackets. Put `from __future__ import annotations` as the very first statement of the file; it tells Python to store hints as text without evaluating them.
+        Looping over a dictionary, as `max` does here, visits its keys.
+
+        ### Built-in names with `from __future__ import annotations`
+
+        A second style uses the built-in names `list` and `dict` with square brackets.
+
+        Put `from __future__ import annotations` as the very first statement of the file. It tells Python to store hints as text without evaluating them.
 
         ```python
         from __future__ import annotations
@@ -602,11 +840,28 @@ extension Curriculum {
         print(label_counts.__annotations__["labels"])
         ```
 
-        This displays `{'chat': 2, 'embed': 1}` and then `list[str]`. This course runs Python 3.9. Newer Python versions also allow `int | None` for "int or None", but on 3.9 that spelling fails when evaluated, so write `Optional[int]`.
+        ```text
+        {'chat': 2, 'embed': 1}
+        list[str]
+        ```
+
+        > **Watch out:** This course runs Python 3.9. Newer Python versions also allow `int | None` for "int or None", but on 3.9 that spelling fails when evaluated, so write `Optional[int]`.
 
         ## Functions are values
 
-        A function name refers to a function object, just as `scores` refers to a list. Without parentheses you **refer** to the function; with parentheses you **call** it. So you can save a function under another name, store it in a list or dictionary, pass it as an argument (you did this with `sorted(..., key=...)`), and return it from another function. A function that takes or returns functions is called a **higher-order function**.
+        A function name refers to a function object, just as `scores` refers to a list.
+
+        - Without parentheses you **refer** to the function.
+        - With parentheses you **call** it.
+
+        So you can:
+
+        - save a function under another name,
+        - store it in a list or dictionary,
+        - pass it as an argument (you did this with `sorted(..., key=...)`),
+        - and return it from another function.
+
+        A function that takes or returns functions is called a **higher-order function**.
 
         ```python
         from typing import Callable, Dict
@@ -627,11 +882,28 @@ extension Curriculum {
         print(alias(5), alias is double, double.__name__)
         ```
 
-        This displays 12, then -4, then `10 True double`. In `Callable[[float], float]`, the inner square brackets list the parameter types and the last type is the result; `Callable[..., int]` (with three dots) means "any parameters, returns int". Every function stores its own name as text in `__name__`. A common slip is `apply_twice(double(), 3)`: that calls double immediately (and fails, since it needs a value) instead of passing the function.
+        ```text
+        12
+        -4
+        10 True double
+        ```
+
+        ### Reading the example
+
+        - In `Callable[[float], float]`, the inner square brackets list the parameter types and the last type is the result.
+        - `Callable[..., int]` (with three dots) means "any parameters, returns int".
+        - Every function stores its own name as text in `__name__`.
+
+        > **Watch out:** A common slip is `apply_twice(double(), 3)`. That calls double immediately (and fails, since it needs a value) instead of passing the function.
 
         ## Closures remember their surroundings
 
-        A `def` can appear inside another function. The inner function can read the outer function's parameters and variables. If the outer function returns the inner one, the returned function keeps remembering those variables even after the outer call has finished. A function that remembers variables from where it was created is called a **closure**. Each call of the outer function creates a separate closure with its own remembered values.
+        A `def` can appear inside another function. The inner function can read the outer function's parameters and variables.
+
+        If the outer function returns the inner one, the returned function keeps remembering those variables even after the outer call has finished.
+
+        - A function that remembers variables from where it was created is called a **closure**.
+        - Each call of the outer function creates a separate closure with its own remembered values.
 
         ```python
         from typing import Callable
@@ -647,9 +919,18 @@ extension Curriculum {
         print(strict(0.95))
         ```
 
-        This displays `False True`, then True. `strict` remembers limit 0.9 and `lenient` remembers 0.5.
+        ```text
+        False True
+        True
+        ```
 
-        Reading a remembered variable just works. **Changing** it needs the keyword `nonlocal`, which says "this name belongs to the enclosing function, not to me". Without it, the assignment `count = count + 1` would make a new local name and fail with UnboundLocalError.
+        `strict` remembers limit 0.9 and `lenient` remembers 0.5.
+
+        ### Changing a remembered variable with nonlocal
+
+        Reading a remembered variable just works. **Changing** it needs the keyword `nonlocal`, which says "this name belongs to the enclosing function, not to me".
+
+        > **Remember:** Without `nonlocal`, the assignment `count = count + 1` would make a new local name and fail with UnboundLocalError.
 
         ```python
         def make_counter():
@@ -666,11 +947,21 @@ extension Curriculum {
         print(other())
         ```
 
-        This displays `1 2 3`, then 1: the second counter has its own count.
+        ```text
+        1 2 3
+        1
+        ```
+
+        The second counter has its own count.
 
         ## Flexible parameters: *args and **kwargs
 
-        Some functions should accept any number of arguments. In a `def`, a parameter written `*name` collects all extra **positional** arguments into a tuple. A parameter written `**name` collects all extra **keyword** arguments (written `key=value` in the call) into a new dictionary whose keys are the argument names as strings. The names `args` and `kwargs` ("keyword arguments") are conventions; the stars do the work.
+        Some functions should accept any number of arguments. In a `def`:
+
+        - A parameter written `*name` collects all extra **positional** arguments into a tuple.
+        - A parameter written `**name` collects all extra **keyword** arguments (written `key=value` in the call) into a new dictionary whose keys are the argument names as strings.
+
+        The names `args` and `kwargs` ("keyword arguments") are conventions; the stars do the work.
 
         ```python
         def describe(*args, **kwargs):
@@ -680,7 +971,14 @@ extension Curriculum {
         print(describe(1, 2, model="nova"))
         ```
 
-        This displays `((), {})` and then `((1, 2), {'model': 'nova'})`. A hint on a starred parameter describes each item: `*latencies: float` means every positional argument should be a float.
+        ```text
+        ((), {})
+        ((1, 2), {'model': 'nova'})
+        ```
+
+        ### Hints on starred parameters
+
+        A hint on a starred parameter describes each item: `*latencies: float` means every positional argument should be a float.
 
         ```python
         from typing import Dict
@@ -701,9 +999,23 @@ extension Curriculum {
         print(settings(), settings(temperature=0.2, top_p=0.9))
         ```
 
-        This displays `0.0 200.5` and then `{'temperature': 0.7} {'temperature': 0.2, 'top_p': 0.9}`. Looping over the kwargs dictionary visits its keys. Each call builds a fresh result dictionary, so earlier calls never leak into later ones. Ordinary parameters can come first: `def report(name, *args, **kwargs)`.
+        ```text
+        0.0 200.5
+        {'temperature': 0.7} {'temperature': 0.2, 'top_p': 0.9}
+        ```
 
-        The stars also work in the opposite direction, when **calling**: `func(*values)` spreads a tuple or list into separate positional arguments, and `func(**options)` spreads a dictionary into keyword arguments. This lets one function forward whatever it received to another.
+        - Looping over the kwargs dictionary visits its keys.
+        - Each call builds a fresh result dictionary, so earlier calls never leak into later ones.
+        - Ordinary parameters can come first: `def report(name, *args, **kwargs)`.
+
+        ### Spreading arguments when calling
+
+        The stars also work in the opposite direction, when **calling**:
+
+        - `func(*values)` spreads a tuple or list into separate positional arguments.
+        - `func(**options)` spreads a dictionary into keyword arguments.
+
+        This lets one function forward whatever it received to another.
 
         ```python
         def cost(tokens, rate=0.002):
@@ -715,11 +1027,20 @@ extension Curriculum {
         print(cost(*[2000]))
         ```
 
-        This displays 0.05 and 0.004. `(5000,)` is a one-item tuple; the comma makes it a tuple.
+        ```text
+        0.05
+        0.004
+        ```
+
+        `(5000,)` is a one-item tuple; the comma makes it a tuple.
 
         ## Decorators wrap behaviour
 
-        A **decorator** is a function that takes a function and returns a replacement, usually a **wrapper** function that does something extra and calls the original. Writing `@logged` on the line above a `def` is shorthand for `add_tokens = logged(add_tokens)` right after the definition. The wrapper uses `*args, **kwargs` so it can forward any arguments, and it must return the original's result.
+        A **decorator** is a function that takes a function and returns a replacement. The replacement is usually a **wrapper** function that does something extra and calls the original.
+
+        - Writing `@logged` on the line above a `def` is shorthand for `add_tokens = logged(add_tokens)` right after the definition.
+        - The wrapper uses `*args, **kwargs` so it can forward any arguments.
+        - The wrapper must return the original's result.
 
         ```python
         calls = []
@@ -740,7 +1061,24 @@ extension Curriculum {
         print(add_tokens.__name__)
         ```
 
-        This displays 5, 4, `['add_tokens', 'add_tokens']`, and then wrapper. That last line is a problem: the decorated function has lost its own name. The standard-library decorator `functools.wraps(func)`, placed on the wrapper, copies the original's `__name__`, its **docstring** (a string written as the first statement of a function body, stored in `__doc__`), and its hints onto the wrapper. It also saves the original function in the wrapper's `__wrapped__` attribute.
+        ```text
+        5
+        4
+        ['add_tokens', 'add_tokens']
+        wrapper
+        ```
+
+        That last line is a problem: the decorated function has lost its own name.
+
+        ### Keeping the original's details with functools.wraps
+
+        The standard-library decorator `functools.wraps(func)`, placed on the wrapper, copies these onto the wrapper:
+
+        - the original's `__name__`,
+        - its **docstring** (a string written as the first statement of a function body, stored in `__doc__`),
+        - and its hints.
+
+        It also saves the original function in the wrapper's `__wrapped__` attribute.
 
         ```python
         import functools
@@ -764,9 +1102,22 @@ extension Curriculum {
         print(add_tokens.__wrapped__(1, 1))
         ```
 
-        This displays called add_tokens -> 5, then add_tokens, then Return the combined token count., then 2 (calling the original directly skips the logging). A wrapper is a closure, so it can also keep state between calls with `nonlocal`, exactly like `make_counter`.
+        ```text
+        called add_tokens -> 5
+        add_tokens
+        Return the combined token count.
+        2
+        ```
 
-        A decorator that needs settings is written as a function that **returns** a decorator; this is sometimes called a decorator factory. `@repeat(3)` first calls `repeat(3)`, then applies the decorator it returns: `ping = repeat(3)(ping)`.
+        Calling the original directly through `__wrapped__` skips the logging.
+
+        > **Note:** A wrapper is a closure, so it can also keep state between calls with `nonlocal`, exactly like `make_counter`.
+
+        ### Decorators with settings
+
+        A decorator that needs settings is written as a function that **returns** a decorator; this is sometimes called a decorator factory.
+
+        `@repeat(3)` first calls `repeat(3)`, then applies the decorator it returns: `ping = repeat(3)(ping)`.
 
         ```python
         import functools
@@ -790,11 +1141,28 @@ extension Curriculum {
         print(ping.__name__)
         ```
 
-        This displays `['ping nova', 'ping nova', 'ping nova']` and ping. The name `_` is a convention for a loop variable you do not use.
+        ```text
+        ['ping nova', 'ping nova', 'ping nova']
+        ping
+        ```
+
+        The name `_` is a convention for a loop variable you do not use.
 
         ## Cache results with functools.lru_cache
 
-        **Caching** (also called memoization) means remembering the result of a call so that a repeated call with the same arguments returns the saved result without running the body again. `@functools.lru_cache(maxsize=None)` adds a cache to a function. `maxsize=None` keeps every result; a number such as `maxsize=128` keeps only that many, discarding the least recently used one first (LRU stands for "least recently used"). The decorated function gains `cache_info()`, which reports `hits` (answers served from the cache) and `misses` (calls that ran the body), and `cache_clear()`, which empties the cache.
+        **Caching** (also called memoization) means remembering the result of a call. A repeated call with the same arguments then returns the saved result without running the body again.
+
+        ### Adding a cache
+
+        `@functools.lru_cache(maxsize=None)` adds a cache to a function.
+
+        - `maxsize=None` keeps every result.
+        - A number such as `maxsize=128` keeps only that many, discarding the least recently used one first (LRU stands for "least recently used").
+
+        The decorated function gains two extra methods:
+
+        - `cache_info()` reports `hits` (answers served from the cache) and `misses` (calls that ran the body).
+        - `cache_clear()` empties the cache.
 
         ```python
         import functools
@@ -814,7 +1182,21 @@ extension Curriculum {
         print(info.hits, info.misses)
         ```
 
-        This displays 5, 5, 2, `[' hello ', 'hi']`, and `1 2`: the body ran only twice. Cache **pure** functions only: if the body has important side effects, or its result depends on something other than its arguments, a cached answer can be wrong. The arguments become dictionary-style keys, so they must be **hashable** (unchangeable values such as numbers, strings, and tuples). Lists and dictionaries are rejected with TypeError:
+        ```text
+        5
+        5
+        2
+        [' hello ', 'hi']
+        1 2
+        ```
+
+        The body ran only twice: one hit and two misses.
+
+        ### What can be cached
+
+        > **Watch out:** Cache **pure** functions only. If the body has important side effects, or its result depends on something other than its arguments, a cached answer can be wrong.
+
+        The arguments become dictionary-style keys, so they must be **hashable** (unchangeable values such as numbers, strings, and tuples). Lists and dictionaries are rejected with TypeError:
 
         ```python
         import functools
@@ -830,7 +1212,10 @@ extension Curriculum {
             print("lists cannot be cache keys")
         ```
 
-        This displays 6 and then lists cannot be cache keys.
+        ```text
+        6
+        lists cannot be cache keys
+        ```
 
         ## Common mistakes and debugging
 
@@ -848,16 +1233,22 @@ extension Curriculum {
             Create adjustment functions from a setting and apply a list of them to one invented model score. This practises type hints, functions as values, and closures.
 
             Starting code:
-            from typing import Callable, List is supplied. def make_scaler(factor): currently returns None, and def apply_all(funcs, value): currently returns []. Both are placeholders, and neither has type hints yet.
+            - `from typing import Callable, List` is supplied. Keep it.
+            - `def make_scaler(factor):` currently returns `None` as a placeholder and has no type hints yet. Replace its body and add hints.
+            - `def apply_all(funcs, value):` currently returns `[]` as a placeholder and has no type hints yet. Replace its body and add hints.
 
             Your task:
             1. Keep the import and both function names and parameter names.
-            2. Add type hints exactly like this: make_scaler(factor: float) -> Callable[[float], float], and apply_all(funcs: List[Callable[[float], float]], value: float) -> List[float]. The check reads __annotations__ to confirm every parameter and the result have a hint.
-            3. make_scaler returns a new inner function (a closure). That function takes one number and returns it multiplied by factor. Each make_scaler call creates an independent function with its own factor.
-            4. apply_all returns a new list containing the result of calling each function in funcs with value, in the same order as funcs. An empty funcs list returns []. Do not change funcs.
+            2. Add type hints to `make_scaler` exactly like this: `make_scaler(factor: float) -> Callable[[float], float]`.
+            3. Add type hints to `apply_all` exactly like this: `apply_all(funcs: List[Callable[[float], float]], value: float) -> List[float]`. The check reads `__annotations__` to confirm every parameter and the result have a hint.
+            4. Make `make_scaler` return a new inner function (a closure). That function takes one number and returns it multiplied by `factor`. Each `make_scaler` call creates an independent function with its own `factor`.
+            5. Make `apply_all` return a new list containing the result of calling each function in `funcs` with `value`, in the same order as `funcs`. An empty `funcs` list returns `[]`. Do not change `funcs`.
 
             Expected result:
-            double = make_scaler(2) and half = make_scaler(0.5). double(3) returns 6, half(3) returns 1.5, and double(-1.5) returns -3.0. make_scaler(0)(99) returns 0. apply_all([double, half], 4) returns [8, 2.0]. apply_all([], 4) returns [].
+            - With `double = make_scaler(2)` and `half = make_scaler(0.5)`: `double(3)` returns `6`, `half(3)` returns `1.5`, and `double(-1.5)` returns `-3.0`.
+            - `make_scaler(0)(99)` returns `0`.
+            - `apply_all([double, half], 4)` returns `[8, 2.0]`.
+            - `apply_all([], 4)` returns `[]`.
 
             Check:
             Choose Check solution. It checks the hints, separately created scalers, order, and empty input. Return functions and lists; printing is optional.
@@ -905,27 +1296,36 @@ extension Curriculum {
             assert apply_all([half, half, make_scaler(10)], 1) == [0.5, 0.5, 10]
 
             """, [
-                "Hints go after each parameter name with a colon, and the result hint goes after -> before the final colon of the def line.",
-                "Inside make_scaler, define a second function with its own def that uses factor, and return that inner function's name without calling it.",
-                "In apply_all, loop over funcs, call each one with value using parentheses, append each result to a new list, and return the list after the loop."
+                "Hints go after each parameter name with a colon, and the result hint goes after `->` before the final colon of the `def` line.",
+                "Inside `make_scaler`, define a second function with its own `def` that uses `factor`, and return that inner function's name without calling it.",
+                "In `apply_all`, loop over `funcs`, call each one with `value` using parentheses, append each result to a new list, and return the list after the loop."
             ], effort: .init(difficulty: .similar, scopeUnits: 2)),
             exercise("typing-decorators-flexible", "Accept any number of arguments", """
             Goal:
             Write three small helpers for invented request statistics that accept a flexible number of arguments and forward arguments to another function.
 
             Starting code:
-            from typing import Callable, Dict is supplied. The three functions already have their hinted signatures: total_tokens(*counts: int) -> int returns 0, merge_settings(**overrides: float) -> Dict[str, float] returns {}, and measure(func: Callable[..., int], *args: int, **kwargs: int) returns ('', 0). These return values are placeholders; replace the bodies only.
+            - `from typing import Callable, Dict` is supplied. Keep it.
+            - `total_tokens(*counts: int) -> int` already has its hinted signature. Its body returns `0` as a placeholder.
+            - `merge_settings(**overrides: float) -> Dict[str, float]` already has its hinted signature. Its body returns `{}` as a placeholder.
+            - `measure(func: Callable[..., int], *args: int, **kwargs: int)` already has its hinted signature. Its body returns `('', 0)` as a placeholder.
+            - Replace the three bodies only.
 
             Your task:
             1. Keep the import and all three signatures unchanged.
-            2. total_tokens returns the integer sum of all positional arguments it receives. With no arguments it returns 0.
-            3. merge_settings returns a new dictionary that starts from the defaults {'temperature': 0.7, 'top_p': 1.0} and then applies every keyword argument: a keyword with the same name replaces the default, and a new name is added. With no arguments it returns the defaults. Every call returns a fresh dictionary; earlier calls must not affect later ones.
-            4. measure calls func with exactly the positional and keyword arguments it received (forward them with * and **) and returns a tuple of func's name (its __name__ text) and the result.
+            2. Make `total_tokens` return the integer sum of all positional arguments it receives. With no arguments it returns `0`.
+            3. Make `merge_settings` return a new dictionary that starts from the defaults `{'temperature': 0.7, 'top_p': 1.0}`.
+            4. Then apply every keyword argument to that dictionary: a keyword with the same name replaces the default, and a new name is added. With no arguments, `merge_settings` returns the defaults.
+            5. Make sure every `merge_settings` call returns a fresh dictionary; earlier calls must not affect later ones.
+            6. Make `measure` call `func` with exactly the positional and keyword arguments it received (forward them with `*` and `**`).
+            7. Have `measure` return a tuple of `func`'s name (its `__name__` text) and the result.
 
             Expected result:
-            total_tokens() returns 0, total_tokens(5) returns 5, and total_tokens(10, 20, 30) returns 60.
-            merge_settings() returns {'temperature': 0.7, 'top_p': 1.0}. merge_settings(temperature=0.2) returns {'temperature': 0.2, 'top_p': 1.0}. merge_settings(seed=7.0) returns {'temperature': 0.7, 'top_p': 1.0, 'seed': 7.0}. Key order is not important.
-            With def batches(items, size=4): return (items + size - 1) // size, measure(batches, 10) returns ('batches', 3), measure(batches, 10, size=5) returns ('batches', 2), and measure(batches, items=0) returns ('batches', 0).
+            - `total_tokens()` returns `0`, `total_tokens(5)` returns `5`, and `total_tokens(10, 20, 30)` returns `60`.
+            - `merge_settings()` returns `{'temperature': 0.7, 'top_p': 1.0}`.
+            - `merge_settings(temperature=0.2)` returns `{'temperature': 0.2, 'top_p': 1.0}`.
+            - `merge_settings(seed=7.0)` returns `{'temperature': 0.7, 'top_p': 1.0, 'seed': 7.0}`. Key order is not important.
+            - With `def batches(items, size=4): return (items + size - 1) // size`: `measure(batches, 10)` returns `('batches', 3)`, `measure(batches, 10, size=5)` returns `('batches', 2)`, and `measure(batches, items=0)` returns `('batches', 0)`.
 
             Check:
             Choose Check solution. It calls each helper with zero, one, and several arguments, including keyword-only calls. Return values; printing is optional.
@@ -983,27 +1383,35 @@ extension Curriculum {
             assert measure(no_args) == ('no_args', 9)
 
             """, [
-                "Inside the function, counts is a tuple of every positional argument and overrides is a dictionary of every keyword argument, keyed by name.",
-                "Loop over counts with an accumulator; for merge_settings, create the defaults dictionary inside the function, then loop over the overrides keys and assign each value.",
-                "In measure, spread the received values back out when calling: func(*args, **kwargs). Pair that result with func.__name__ in a tuple."
+                "Inside the function, `counts` is a tuple of every positional argument and `overrides` is a dictionary of every keyword argument, keyed by name.",
+                "Loop over `counts` with an accumulator; for `merge_settings`, create the defaults dictionary inside the function, then loop over the `overrides` keys and assign each value.",
+                "In `measure`, spread the received values back out when calling: `func(*args, **kwargs)`. Pair that result with `func.__name__` in a tuple."
             ], effort: .init(difficulty: .similar, scopeUnits: 3)),
             exercise("typing-decorators-record", "Record calls and cache results", """
             Goal:
             Write a decorator that records which functions were called, and cache an invented batch calculation so repeated questions are answered without recomputing.
 
             Starting code:
-            import functools is supplied, together with two empty lists: calls and computed. def record_calls(func): currently returns func unchanged, which is a placeholder. estimate_batches is already decorated with @record_calls and has a docstring; keep it. cached_batches appends (items, size) to computed and returns the number of batches, but has no cache yet.
+            - `import functools` is supplied. Keep it.
+            - Two empty lists, `calls` and `computed`, are supplied. Keep them.
+            - `def record_calls(func):` currently returns `func` unchanged. This is a placeholder: replace its body.
+            - `estimate_batches` is already decorated with `@record_calls` and has a docstring. Keep it unchanged.
+            - `cached_batches` appends `(items, size)` to `computed` and returns the number of batches, but has no cache yet. Keep its body unchanged.
 
             Your task:
-            1. Keep the import, both lists, estimate_batches, and the body of cached_batches unchanged.
-            2. Make record_calls return a new wrapper function that accepts any positional and keyword arguments. Each time the wrapper is called it appends the original function's name (func.__name__) to calls, then calls the original with exactly the same arguments, and returns the original's result.
-            3. Decorate the wrapper with @functools.wraps(func) so the decorated function keeps its original __name__ and __doc__ and exposes the original as __wrapped__.
-            4. record_calls must work for any function, not just estimate_batches.
-            5. Add @functools.lru_cache(maxsize=None) on the line above def cached_batches, so a repeated call with the same items and size returns the saved result without running the body again.
+            1. Keep the import, both lists, `estimate_batches`, and the body of `cached_batches` unchanged.
+            2. Make `record_calls` return a new wrapper function that accepts any positional and keyword arguments.
+            3. Each time the wrapper is called, it appends the original function's name (`func.__name__`) to `calls`, then calls the original with exactly the same arguments, and returns the original's result.
+            4. Decorate the wrapper with `@functools.wraps(func)` so the decorated function keeps its original `__name__` and `__doc__` and exposes the original as `__wrapped__`.
+            5. Make sure `record_calls` works for any function, not just `estimate_batches`.
+            6. Add `@functools.lru_cache(maxsize=None)` on the line above `def cached_batches`, so a repeated call with the same `items` and `size` returns the saved result without running the body again.
 
             Expected result:
-            estimate_batches(10) returns 3 and calls becomes ['estimate_batches']. estimate_batches(10, size=5) returns 2 and estimate_batches(items=0) returns 0, each adding another 'estimate_batches'. estimate_batches.__name__ is 'estimate_batches', its __doc__ is 'Return how many batches are needed.', and estimate_batches.__wrapped__(7) returns 2 without recording a call.
-            Calling cached_batches(10, 4) twice and then cached_batches(8, 4) returns 3, 3, and 2, leaves computed as [(10, 4), (8, 4)], and cached_batches.cache_info().hits is 1.
+            - `estimate_batches(10)` returns `3` and `calls` becomes `['estimate_batches']`.
+            - `estimate_batches(10, size=5)` returns `2` and `estimate_batches(items=0)` returns `0`, each adding another `'estimate_batches'`.
+            - `estimate_batches.__name__` is `'estimate_batches'` and its `__doc__` is `'Return how many batches are needed.'`.
+            - `estimate_batches.__wrapped__(7)` returns `2` without recording a call.
+            - Calling `cached_batches(10, 4)` twice and then `cached_batches(8, 4)` returns `3`, `3`, and `2`, leaves `computed` as `[(10, 4), (8, 4)]`, and `cached_batches.cache_info().hits` is `1`.
 
             Check:
             Choose Check solution. It checks recorded names, forwarded arguments and results, preserved metadata, a second decorated function, and the cache statistics.
@@ -1077,8 +1485,8 @@ extension Curriculum {
 
             """, [
                 "A decorator receives a function and returns a different function that calls the original; the cache is a ready-made decorator you only need to apply.",
-                "Define wrapper(*args, **kwargs) inside record_calls, put @functools.wraps(func) directly above it, and return wrapper (not wrapper()) at the end of record_calls.",
-                "Inside wrapper, append func.__name__ to calls first, then return func(*args, **kwargs). For the cache, write @functools.lru_cache(maxsize=None) immediately above def cached_batches."
+                "Define `wrapper(*args, **kwargs)` inside `record_calls`, put `@functools.wraps(func)` directly above it, and return `wrapper` (not `wrapper()`) at the end of `record_calls`.",
+                "Inside `wrapper`, append `func.__name__` to `calls` first, then `return func(*args, **kwargs)`. For the cache, write `@functools.lru_cache(maxsize=None)` immediately above `def cached_batches`."
             ], effort: .init(difficulty: .harder, scopeUnits: 3))
         ],
         assessment: exercise("typing-decorators-assessment", "Limit how often a function runs", """
@@ -1086,17 +1494,24 @@ extension Curriculum {
         Write a configurable decorator that lets an invented scoring function run only a limited number of times, then refuses further calls with a custom exception.
 
         Starting code:
-        import functools and from typing import Callable are supplied. class CallLimitError(Exception) is a supplied custom exception; keep it. def limit_calls(max_calls): returns a decorator that currently returns func unchanged, which is a placeholder, and limit_calls has no type hints. request_score is decorated with @limit_calls(2) and has a docstring; keep it.
+        - `import functools` and `from typing import Callable` are supplied. Keep them.
+        - `class CallLimitError(Exception)` is a supplied custom exception. Keep it.
+        - `def limit_calls(max_calls):` returns a decorator that currently returns `func` unchanged. This is a placeholder, and `limit_calls` has no type hints yet.
+        - `request_score` is decorated with `@limit_calls(2)` and has a docstring. Keep it unchanged.
 
         Your task:
-        1. Keep the imports, CallLimitError, and request_score unchanged.
-        2. Give limit_calls the hints max_calls: int and the result hint Callable. The check confirms max_calls and the result are annotated.
-        3. limit_calls(max_calls) returns a decorator. The decorator receives func and returns a wrapper made with @functools.wraps(func), so __name__, __doc__, and __wrapped__ come from the original.
-        4. Every decorated function has its own count of completed calls, starting at 0. When the wrapper is called and the count is still below max_calls, it adds 1 to the count, calls func with exactly the positional and keyword arguments it received, and returns func's result.
-        5. When the count has already reached max_calls, the wrapper raises CallLimitError with a nonempty message and does not call func. With max_calls of 0, every call raises CallLimitError.
+        1. Keep the imports, `CallLimitError`, and `request_score` unchanged.
+        2. Give `limit_calls` the parameter hint `max_calls: int` and the result hint `Callable`. The check confirms `max_calls` and the result are annotated.
+        3. Make `limit_calls(max_calls)` return a decorator. The decorator receives `func` and returns a wrapper made with `@functools.wraps(func)`, so `__name__`, `__doc__`, and `__wrapped__` come from the original.
+        4. Give every decorated function its own count of completed calls, starting at `0`.
+        5. When the wrapper is called and the count is still below `max_calls`, it adds 1 to the count, calls `func` with exactly the positional and keyword arguments it received, and returns `func`'s result.
+        6. When the count has already reached `max_calls`, the wrapper raises `CallLimitError` with a nonempty message and does not call `func`. With a `max_calls` of `0`, every call raises `CallLimitError`.
 
         Expected result:
-        request_score(' hi ') returns 2 and request_score('abc', bonus=1) returns 4; a third call raises CallLimitError. request_score.__name__ is 'request_score', and request_score.__doc__ is 'Score a prompt by its trimmed length.'. Two different functions decorated with @limit_calls(1) can each be called once.
+        - `request_score(' hi ')` returns `2` and `request_score('abc', bonus=1)` returns `4`; a third call raises `CallLimitError`.
+        - `request_score.__name__` is `'request_score'`.
+        - `request_score.__doc__` is `'Score a prompt by its trimmed length.'`.
+        - Two different functions decorated with `@limit_calls(1)` can each be called once.
 
         Check:
         Complete the theory questions and written explanation, then choose Submit assessment. It checks the hints, forwarded arguments, the limit, independent counters, a zero limit, and preserved metadata. Work independently; hints and solutions are unavailable.
