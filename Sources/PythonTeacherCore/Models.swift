@@ -291,6 +291,57 @@ public struct CheckOutcome: Codable, Equatable, Sendable {
     }
 }
 
+public enum PracticeForm: String, Codable, CaseIterable, Sendable {
+    case write, complete, predict, debug, counterexample, transfer, refactor, maintenance, project
+
+    public var title: String {
+        switch self {
+        case .write: return "Write code"
+        case .complete: return "Complete code"
+        case .predict: return "Predict behavior"
+        case .debug: return "Diagnose and repair"
+        case .counterexample: return "Find a counterexample"
+        case .transfer: return "Apply in a new context"
+        case .refactor: return "Refactor"
+        case .maintenance: return "Change a requirement"
+        case .project: return "Build a project"
+        }
+    }
+}
+
+public enum PracticeScaffolding: String, Codable, CaseIterable, Sendable {
+    case guided, light, independent
+
+    public var title: String {
+        switch self {
+        case .guided: return "Step-by-step guidance"
+        case .light: return "Some structure supplied"
+        case .independent: return "Choose your approach"
+        }
+    }
+}
+
+public struct PracticeProfile: Codable, Equatable, Sendable {
+    public let form: PracticeForm
+    public let scaffolding: PracticeScaffolding
+    public let skillIDs: [String]
+    public let reflectionPrompts: [String]
+
+    public init(form: PracticeForm, scaffolding: PracticeScaffolding, skillIDs: [String], reflectionPrompts: [String]) {
+        self.form = form
+        self.scaffolding = scaffolding
+        self.skillIDs = skillIDs
+        self.reflectionPrompts = reflectionPrompts
+    }
+
+    public var isWellFormed: Bool {
+        (1...8).contains(skillIDs.count) && Set(skillIDs).count == skillIDs.count
+            && skillIDs.allSatisfy { $0.utf8.count <= 96 && $0.range(of: #"\A[a-z][a-z0-9-]*-section-[1-9][0-9]*\z"#, options: .regularExpression) != nil }
+            && (1...3).contains(reflectionPrompts.count) && Set(reflectionPrompts).count == reflectionPrompts.count
+            && reflectionPrompts.allSatisfy { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.count <= 400 }
+    }
+}
+
 public struct Exercise: Codable, Identifiable, Equatable, Sendable {
     public var id: String
     public var title: String
@@ -302,6 +353,7 @@ public struct Exercise: Codable, Identifiable, Equatable, Sendable {
     public var effort: ExerciseEffort?
     public var expectedStarterError: String?
     public var checkPlan: AuthoredCheckPlan?
+    public var practiceProfile: PracticeProfile?
 
     static let instructionSectionTitles = ["Goal", "Starting code", "Your task", "Expected result", "Check"]
 
@@ -323,7 +375,7 @@ public struct Exercise: Codable, Identifiable, Equatable, Sendable {
         }
     }
 
-    public init(id: String, title: String, instructions: String, starterCode: String, referenceSolution: String, testCode: String, hints: [String], effort: ExerciseEffort? = nil, expectedStarterError: String? = nil, checkPlan: AuthoredCheckPlan? = nil) {
+    public init(id: String, title: String, instructions: String, starterCode: String, referenceSolution: String, testCode: String, hints: [String], effort: ExerciseEffort? = nil, expectedStarterError: String? = nil, checkPlan: AuthoredCheckPlan? = nil, practiceProfile: PracticeProfile? = nil) {
         self.id = id
         self.title = title
         self.instructions = instructions
@@ -334,6 +386,7 @@ public struct Exercise: Codable, Identifiable, Equatable, Sendable {
         self.effort = effort
         self.expectedStarterError = expectedStarterError
         self.checkPlan = checkPlan
+        self.practiceProfile = practiceProfile
     }
 }
 

@@ -399,6 +399,17 @@ extension Curriculum {
         ```
 
         The lookup did not insert a key. After a repair, check both the returned value and the original records, then call the function again with different data. A correct-looking result must not hide unexpected input changes.
+
+        ### Maintenance/change-request checklist
+
+        Maintenance can mean changing a working function to meet a new requirement, not diagnosing an unexplained bug. First separate what should change from what must stay the same.
+
+        1. Write a small call and its expected result for the new requirement before editing.
+        2. Keep examples of old behavior that the new contract still promises.
+        3. Make the focused change, using meaningful names for any new intermediate values.
+        4. Rerun the new example and the retained old examples, including empty input and unchanged caller data.
+
+        For example, a counter may now need to merge `' Blue '` with `'blue'`. The new example should expect `{'blue': 2}`, while an ordinary `['red', 'red']` example must still produce `{'red': 2}`. Direct calls and `assert` checks are enough; no testing framework is required.
         """,
         exercises: [
             exercise("collections-count", "Count synthetic task labels", """
@@ -520,7 +531,110 @@ extension Curriculum {
                      "def point_totals(records):\n    totals = []\n    for record in records:\n        totals.append(record['points'] + record.get('bonus', 0))\n    return totals\n",
                      "assert point_totals([{'points': 3}]) == [3]\nassert point_totals([]) == []\nrecords = [{'points': 3, 'bonus': 2}, {'points': 0, 'tag': 'keep'}, {'points': 5, 'bonus': 0}, {'points': 3, 'bonus': 2}]\ntotals = point_totals(records)\nassert type(totals) is list\nassert totals == [5, 0, 5, 5]\nfor total in totals:\n    assert type(total) is int\nassert records == [{'points': 3, 'bonus': 2}, {'points': 0, 'tag': 'keep'}, {'points': 5, 'bonus': 0}, {'points': 3, 'bonus': 2}]\ntotals.append(99)\nassert point_totals([{'points': 1, 'bonus': 4}]) == [5]\nassert point_totals(records) == [5, 0, 5, 5]\nassert point_totals([{'points': 0, 'bonus': 0}]) == [0]\nassert records == [{'points': 3, 'bonus': 2}, {'points': 0, 'tag': 'keep'}, {'points': 5, 'bonus': 0}, {'points': 3, 'bonus': 2}]\n",
                      ["The failing input is a list containing one dictionary. Trace the lookup within that dictionary rather than changing the outer structure or parsing it as JSON.", "Compare the record that succeeds with the one that fails. Which field may be absent according to the contract, and what value should its absence contribute?", "Keep bracket lookup for required points. Read the optional bonus with get and a default of 0, then append the sum to a fresh result list; do not insert a default into the caller's dictionary."],
-                     effort: .init(scopeUnits: 2), expectedStarterError: "KeyError")
+                     effort: .init(scopeUnits: 2), expectedStarterError: "KeyError"),
+            exercise("collections-transfer-stock-report", "Summarize a small stockroom", """
+                     Goal:
+                     Turn synthetic stockroom records into a reusable report. Each record describes one stored batch, so repeated names and categories still represent separate batches.
+
+                     Starting code:
+                     Keep `def stock_report(records, low_limit):`. Replace the placeholder return with your implementation; helper functions are optional. The input is Python data, not JSON text.
+
+                     Your task:
+                     1. Assume `records` is a list of dictionaries with string `name` and `category` fields and a nonnegative integer `units` field. `low_limit` is a nonnegative integer. Ignore extra fields; no input validation is required.
+                     2. Return a new dictionary with exactly `total_units`, `category_counts`, and `low_stock` keys. `total_units` is the integer sum of all units. `category_counts` is a dictionary counting records per exact category, not units per category.
+                     3. Make `low_stock` a list of the exact names of records whose units are at most `low_limit`, including equality. Keep input order and repeated names. Preserve case and spaces in names and categories.
+                     4. Leave the list and all dictionaries unchanged, and compute fresh results for every call. For empty input return `{'total_units': 0, 'category_counts': {}, 'low_stock': []}`.
+                     5. Choose your own intermediate values and small examples before implementing the report.
+
+                     Expected result:
+                     - `stock_report([{'name': 'pen', 'category': 'desk', 'units': 2}, {'name': 'pad', 'category': 'desk', 'units': 5}, {'name': 'pen', 'category': 'desk', 'units': 0}], 2)` returns `{'total_units': 7, 'category_counts': {'desk': 3}, 'low_stock': ['pen', 'pen']}`.
+                     - `stock_report([{'name': 'box', 'category': 'packing', 'units': 3}], 2)` returns `{'total_units': 3, 'category_counts': {'packing': 1}, 'low_stock': []}`.
+                     - Dictionary key order does not matter; list order does.
+
+                     Check:
+                     Choose **Check solution**. Checks vary records and limits, include zero and equality, preserve duplicates and exact text, and check empty input, unchanged data, and repeated calls. Return Python data rather than printed text.
+                     """,
+                     "def stock_report(records, low_limit):\n    return {}\n",
+                     """
+                     def stock_report(records, low_limit):
+                         total_units = 0
+                         category_counts = {}
+                         low_stock = []
+                         for record in records:
+                             total_units += record['units']
+                             category = record['category']
+                             category_counts[category] = category_counts.get(category, 0) + 1
+                             if record['units'] <= low_limit:
+                                 low_stock.append(record['name'])
+                         return {'total_units': total_units, 'category_counts': category_counts, 'low_stock': low_stock}
+                     """,
+                     """
+                     assert stock_report([], 2) == {'total_units': 0, 'category_counts': {}, 'low_stock': []}
+                     records = [{'name': 'pen', 'category': 'desk', 'units': 2}, {'name': 'pad', 'category': 'desk', 'units': 5}, {'name': 'pen', 'category': 'desk', 'units': 0}, {'name': ' Box ', 'category': 'Desk', 'units': 2, 'tag': 'keep'}]
+                     report = stock_report(records, 2)
+                     assert type(report) is dict
+                     assert report == {'total_units': 9, 'category_counts': {'desk': 3, 'Desk': 1}, 'low_stock': ['pen', 'pen', ' Box ']}
+                     assert type(report['total_units']) is int
+                     assert type(report['category_counts']) is dict
+                     assert type(report['low_stock']) is list
+                     for count in report['category_counts'].values():
+                         assert type(count) is int
+                     assert records == [{'name': 'pen', 'category': 'desk', 'units': 2}, {'name': 'pad', 'category': 'desk', 'units': 5}, {'name': 'pen', 'category': 'desk', 'units': 0}, {'name': ' Box ', 'category': 'Desk', 'units': 2, 'tag': 'keep'}]
+                     report['category_counts']['desk'] = 99
+                     report['low_stock'].append('extra')
+                     assert stock_report(records, 0) == {'total_units': 9, 'category_counts': {'desk': 3, 'Desk': 1}, 'low_stock': ['pen']}
+                     assert stock_report([{'name': 'box', 'category': 'packing', 'units': 3}], 2) == {'total_units': 3, 'category_counts': {'packing': 1}, 'low_stock': []}
+                     assert stock_report([{'name': 'z', 'category': ' a ', 'units': 1}, {'name': 'a', 'category': 'a', 'units': 1}], 1) == {'total_units': 2, 'category_counts': {' a ': 1, 'a': 1}, 'low_stock': ['z', 'a']}
+                     assert stock_report([], 0) == {'total_units': 0, 'category_counts': {}, 'low_stock': []}
+                     assert records == [{'name': 'pen', 'category': 'desk', 'units': 2}, {'name': 'pad', 'category': 'desk', 'units': 5}, {'name': 'pen', 'category': 'desk', 'units': 0}, {'name': ' Box ', 'category': 'Desk', 'units': 2, 'tag': 'keep'}]
+                     """,
+                     ["Separate the three report questions: how many units, how many records per category, and which names meet the limit?", "Use a fresh total, dictionary, and list for each call. Repeated records contribute again; this is not a unique-name task.", "For each record, add its units, increase its category's count using get(category, 0), and append its name when units <= low_limit. Return the three results without changing any record."],
+                     effort: .init(difficulty: .similar, scopeUnits: 2),
+                     practiceProfile: .init(form: .transfer, scaffolding: .independent, skillIDs: ["collections-section-1", "collections-section-2", "functions-section-1"], reflectionPrompts: ["How did you separate counting batches from totaling units?", "Which example proves that repeated low-stock names and their order are preserved?"])),
+            exercise("collections-maintenance-label-counts", "Update a working label counter", """
+                     Goal:
+                     Implement a change request for a working case-sensitive counter: labels should now be cleaned and blank labels ignored. This is a new requirement, not an unexplained bug in the old behavior.
+
+                     Starting code:
+                     Keep `def count_clean_labels(labels):`. Its current body correctly counts exact labels, including blank text. Update that body rather than replacing the interface.
+
+                     Your task:
+                     1. Assume `labels` is a list of strings. Return a new dictionary of integer occurrence counts after removing edge whitespace with `strip` and normalizing case with `lower`. Preserve internal spaces.
+                     2. Ignore labels that become empty after cleaning. Merge repeated cleaned labels and count every occurrence; do not remove duplicates before counting.
+                     3. Preserve ordinary lowercase, nonblank counts and return `{}` for empty input or input containing only blank labels. Leave the original list and strings unchanged; compute fresh results each call.
+                     4. Write a small example for the changed requirement before editing, then rerun an old example whose behavior should remain unchanged.
+
+                     Expected result:
+                     - `count_clean_labels(['red', 'red', 'blue'])` still returns `{'red': 2, 'blue': 1}`.
+                     - `count_clean_labels([' Blue ', 'blue', '', '  ', 'RED', 'red'])` now returns `{'blue': 2, 'red': 2}`.
+                     - `count_clean_labels([' A  B ', 'a b'])` returns `{'a  b': 1, 'a b': 1}`. Dictionary key order does not matter.
+
+                     Check:
+                     Choose **Check solution**. The original working code fails the new cleaning checks with `AssertionError`. Checks also retain ordinary counts, empty input, exact internal spacing, unchanged input, and repeated calls. No validation or testing framework is required.
+                     """,
+                     "def count_clean_labels(labels):\n    counts = {}\n    for label in labels:\n        counts[label] = counts.get(label, 0) + 1\n    return counts\n",
+                     "def count_clean_labels(labels):\n    counts = {}\n    for label in labels:\n        cleaned = label.strip().lower()\n        if cleaned:\n            counts[cleaned] = counts.get(cleaned, 0) + 1\n    return counts\n",
+                     """
+                     assert count_clean_labels([]) == {}
+                     assert count_clean_labels(['red', 'red', 'blue']) == {'red': 2, 'blue': 1}
+                     labels = [' Blue ', 'blue', '', '  ', 'RED', 'red']
+                     counts = count_clean_labels(labels)
+                     assert type(counts) is dict
+                     assert counts == {'blue': 2, 'red': 2}
+                     for count in counts.values():
+                         assert type(count) is int
+                     assert labels == [' Blue ', 'blue', '', '  ', 'RED', 'red']
+                     assert count_clean_labels(['', ' ', '\\t', '\\n']) == {}
+                     assert count_clean_labels([' A  B ', 'a b', '\\tA  B\\n']) == {'a  b': 2, 'a b': 1}
+                     assert count_clean_labels(['new', 'new', 'new']) == {'new': 3}
+                     counts['blue'] = 99
+                     assert count_clean_labels(labels) == {'blue': 2, 'red': 2}
+                     assert count_clean_labels([]) == {}
+                     assert labels == [' Blue ', 'blue', '', '  ', 'RED', 'red']
+                     """,
+                     ["Compare an ordinary-label example that should stay the same with a mixed-case or blank-label example that should change.", "Save strip().lower() in a new local name; string methods return cleaned text without changing the caller's list. Decide whether that cleaned text should be counted.", "Inside the loop, use cleaned = label.strip().lower(). Only when cleaned is nonempty, update counts[cleaned] from counts.get(cleaned, 0) + 1. Keep the fresh dictionary and return after the loop."],
+                     effort: .init(difficulty: .similar, scopeUnits: 1),
+                     practiceProfile: .init(form: .maintenance, scaffolding: .light, skillIDs: ["values-section-2", "collections-section-2", "collections-section-7"], reflectionPrompts: ["Which old behavior remained valid and which behavior did the change request replace?", "Which example distinguishes ignoring blank labels from accidentally losing repeated labels?"]))
         ],
         assessment: exercise("collections-assessment", "Aggregate token usage by model", """
                              Goal:

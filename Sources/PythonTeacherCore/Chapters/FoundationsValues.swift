@@ -407,7 +407,54 @@ extension Curriculum {
                      "jobs = 3\ninput_each = 40\noutput_each = 10\npredicted_before = 130\ntotal_tokens = jobs * (input_each + output_each)\n",
                      "assert jobs == 3 and input_each == 40 and output_each == 10\nassert type(predicted_before) is int and predicted_before == 130\nassert type(total_tokens) is int and total_tokens == 150\n",
                      ["Separate two questions: what does the original expression do, and what does the rule require for each job?", "Multiplication happens before addition. Work out `3 * 40` first when predicting the original, then account for the remaining addition.", "The original prediction is `130`. For the repair, group `input_each + output_each` in parentheses so `jobs` multiplies all tokens for one job."],
-                     effort: .init(difficulty: .similar, scopeUnits: 2))
+                     effort: .init(difficulty: .similar, scopeUnits: 2)),
+            exercise("values-transfer-workshop-cost", "Prepare a workshop cost", """
+                     Goal:
+                     Prepare a clean workshop label and its total cost. Choose an approach using the text and number operations already taught.
+
+                     Starting code:
+                     - Keep the supplied input lines unchanged: `raw_label = '  CLAY Lab  '`, `attendees = 4`, `seat_price = 2.5`, and `setup_fee = 3.0`.
+                     - The label is a string, possibly empty or whitespace-only. Attendees are a nonnegative integer; prices are finite nonnegative floats in whole or half dollars. No invalid inputs need handling.
+                     - Replace `workshop_label = ''` and `total_cost = 0.0`. Additional meaningful names are welcome.
+
+                     Your task:
+                     1. Save `workshop_label` without edge whitespace and with lowercase letters, preserving any spaces between words.
+                     2. Save the float `total_cost`: every attendee pays the seat price, and the workshop pays one setup fee even when nobody attends. Do not round or turn the cost into text.
+
+                     Expected result:
+                     - The supplied inputs give `workshop_label` equal to `'clay lab'` and `total_cost` equal to `13.0`.
+                     - Zero attendees with the same prices give `3.0`.
+                     - Label `'  Paper ART '` with six attendees, seat price `0.5`, and setup fee `1.5` gives `'paper art'` and `4.5`.
+                     - A whitespace-only label becomes `''`; it does not change the cost rule.
+
+                     Check:
+                     Choose **Check solution**. Fresh named cases vary the label, attendance, and both prices, including zero attendance and empty text. The original typed checks must pass too. A failed case leaves later cases not reached.
+
+                     To explore without changing your draft, awarding XP, or completing the exercise, enter a Python literal (a directly written value such as `0`, `0.5`, or `'Paper ART'`) in an Experiment field and choose **Run experiment**. Keep the supplied input lines unchanged for checking.
+                     """,
+                     "raw_label = '  CLAY Lab  '\nattendees = 4\nseat_price = 2.5\nsetup_fee = 3.0\nworkshop_label = ''\ntotal_cost = 0.0\n",
+                     "raw_label = '  CLAY Lab  '\nattendees = 4\nseat_price = 2.5\nsetup_fee = 3.0\nworkshop_label = raw_label.strip().lower()\ntotal_cost = attendees * seat_price + setup_fee\n",
+                     "assert raw_label == '  CLAY Lab  ' and attendees == 4\nassert seat_price == 2.5 and setup_fee == 3.0\nassert type(workshop_label) is str and workshop_label == 'clay lab'\nassert type(total_cost) is float and total_cost == 13.0\n",
+                     ["Treat the label and the cost as two separate results. Which part of the price is per person, and which part is paid only once?", "String methods return new text, so save their result. The setup fee remains even when the number of attendees is zero.", "Use `raw_label.strip().lower()` for the label and `attendees * seat_price + setup_fee` for the cost. Separate text-cleaning assignments are equally valid."],
+                     effort: .init(difficulty: .similar, scopeUnits: 2),
+                     checkPlan: .init(inputs: [
+                        .init(name: "raw_label", defaultLiteral: "'  CLAY Lab  '"),
+                        .init(name: "attendees", defaultLiteral: "4"),
+                        .init(name: "seat_price", defaultLiteral: "2.5"),
+                        .init(name: "setup_fee", defaultLiteral: "3.0")
+                     ], checks: [
+                        .init(id: "original-label", title: "Original workshop: clean label", target: "workshop_label", expectedLiteral: "'clay lab'"),
+                        .init(id: "original-cost", title: "Original workshop: total cost", target: "total_cost", expectedLiteral: "13.0"),
+                        .init(id: "zero-attendance", title: "Nobody attends: setup still costs money", inputs: ["attendees": "0"], target: "total_cost", expectedLiteral: "3.0"),
+                        .init(id: "changed-label", title: "Another workshop with an internal space", inputs: ["raw_label": "'  Paper ART '"], target: "workshop_label", expectedLiteral: "'paper art'"),
+                        .init(id: "changed-prices", title: "Six half-dollar seats and one setup fee", inputs: ["attendees": "6", "seat_price": "0.5", "setup_fee": "1.5"], target: "total_cost", expectedLiteral: "4.5"),
+                        .init(id: "blank-label", title: "Whitespace-only label", inputs: ["raw_label": "'   '"], target: "workshop_label", expectedLiteral: "''"),
+                        .init(id: "empty-label", title: "Already empty label", inputs: ["raw_label": "''"], target: "workshop_label", expectedLiteral: "''"),
+                        .init(id: "free-workshop", title: "Zero prices with attendees", inputs: ["attendees": "2", "seat_price": "0.0", "setup_fee": "0.0"], target: "total_cost", expectedLiteral: "0.0")
+                     ]),
+                     practiceProfile: .init(form: .transfer, scaffolding: .independent,
+                                            skillIDs: ["values-section-2", "values-section-3", "values-section-5"],
+                                            reflectionPrompts: ["Which part of the cost changes with attendance?", "What stays unchanged when you save the cleaned label?"]))
         ],
         assessment: exercise("values-assessment", "Summarize a synthetic run", """
                              Goal:

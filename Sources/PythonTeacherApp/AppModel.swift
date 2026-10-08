@@ -157,6 +157,14 @@ final class AppModel: ObservableObject {
         return exercises.first { $0.id == progress.selectedExerciseIDs[chapter.id] } ?? chapter.exercises[0]
     }
 
+    var practiceGuide: PracticeGuide? {
+        guard mode != .assessment,
+              let reviewed = chapter.exercises.first(where: { $0.id == exercise.id }),
+              !Curriculum.isAssessment(reviewed.id, in: chapters),
+              let profile = reviewed.practiceProfile else { return nil }
+        return PracticeGuide.resolve(profile, chapterID: chapter.id, graph: curriculumGraph)
+    }
+
     private func savedLegacyExercises(mode: LearningMode) -> [Exercise] {
         Curriculum.legacyExercises(chapterID: chapter.id, mode: mode).filter { exercise in
             let key = "\(chapter.id):\(mode == .assessment ? "assessment" : "practice"):\(exercise.id)"
@@ -705,7 +713,8 @@ final class AppModel: ObservableObject {
             instructions: exercise.instructions, starterCode: exercise.starterCode, currentCode: code,
             codeChange: codeChange, runChange: runChange, runStatus: runStatus, latestRun: teacherRun,
             hintsUsed: hintCount, solutionRevealed: solutionRevealed,
-            currentExperimentInputs: experimentPlan == nil ? nil : currentExperimentInputs)
+            currentExperimentInputs: experimentPlan == nil ? nil : currentExperimentInputs,
+            practiceProfile: practiceGuide)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         encoder.dateEncodingStrategy = .iso8601
@@ -1026,6 +1035,28 @@ private struct TeacherWorkspaceSnapshot: Encodable {
     let hintsUsed: Int
     let solutionRevealed: Bool
     let currentExperimentInputs: [String: String]?
+    let practiceProfile: PracticeGuide?
+}
+
+struct PracticeGuide: Encodable, Equatable {
+    let form: PracticeForm
+    let scaffolding: PracticeScaffolding
+    let skillTitles: [String]
+    let reflectionPrompts: [String]
+    let purpose = "This describes the task's design, not independent completion or chapter mastery. Hints remain available."
+
+    static func resolve(_ profile: PracticeProfile, chapterID: String, graph: CurriculumGraph) -> PracticeGuide? {
+        guard profile.isWellFormed, let toolkit = graph.closureIncludingSelf(of: chapterID) else { return nil }
+        let sections = toolkit.flatMap(\.lessonSections).filter { $0.role != .overview }
+        var titles: [String] = []
+        for id in profile.skillIDs {
+            let matches = sections.filter { $0.topic.id == id }
+            guard matches.count == 1, let section = matches.first else { return nil }
+            titles.append(section.topic.title)
+        }
+        return PracticeGuide(form: profile.form, scaffolding: profile.scaffolding,
+                             skillTitles: titles, reflectionPrompts: profile.reflectionPrompts)
+    }
 }
 
 struct RejectedPractice: Sendable {

@@ -389,7 +389,53 @@ extension Curriculum {
                         .init(id: "without-approval", title: "Above the minimum without approval: entry denied", inputs: ["age": "13", "approved": "False"], target: "can_enter", expectedLiteral: "False"),
                         .init(id: "changed-minimum-below", title: "Age 17 with a minimum of 18: entry denied", inputs: ["age": "17", "minimum_age": "18"], target: "can_enter", expectedLiteral: "False"),
                         .init(id: "changed-minimum-above", title: "Age 19 with a minimum of 18 and approval: entry allowed", inputs: ["age": "19", "minimum_age": "18"], target: "can_enter", expectedLiteral: "True")
-                     ]))
+                     ])),
+            exercise("decisions-transfer-library-entry", "Decide library entry", """
+                     Goal:
+                     Decide whether one more visitor may enter an invented library room. Choose how to express the rule using the decisions and Boolean operations you have learned.
+
+                     Starting code:
+                     - Keep the supplied input lines unchanged: `visitors = 3`, `capacity = 4`, `has_pass = True`, and `is_open = True`.
+                     - Visitors and capacity are nonnegative integers; both permission inputs are Booleans. Inputs are suitable values, with no invalid data to handle.
+                     - Replace the `can_enter = False` placeholder. You may add names or decision branches.
+
+                     Your task:
+                     1. Save the Boolean `can_enter`: entry is allowed only when the room is open, the arriving visitor has a pass, and the current visitor count is strictly below capacity. Otherwise save `False`. A pass cannot bypass either room rule.
+
+                     Expected result:
+                     - The supplied inputs give `True`.
+                     - Four visitors at capacity four give `False`, even with a pass and an open room.
+                     - With space available, either a missing pass or a closed room gives `False`.
+                     - Zero visitors at capacity one can enter with a pass when open; capacity zero never has space.
+
+                     Check:
+                     Choose **Check solution**. Fresh named cases include a full room, a room already above capacity, each missing permission, and changed capacities including zero. The original typed checks must pass too. A failed case leaves later cases not reached.
+
+                     To explore without changing your draft, awarding XP, or completing the exercise, enter Python literal values (directly written values such as `0` or `False`) in the Experiment fields and choose **Run experiment**. Keep the supplied input lines unchanged for checking.
+                     """,
+                     "visitors = 3\ncapacity = 4\nhas_pass = True\nis_open = True\ncan_enter = False\n",
+                     "visitors = 3\ncapacity = 4\nhas_pass = True\nis_open = True\ncan_enter = visitors < capacity and has_pass and is_open\n",
+                     "assert visitors == 3 and capacity == 4\nassert has_pass is True and is_open is True\nassert type(can_enter) is bool and can_enter is True\n",
+                     ["Try a small decision table. Start with space available, then change just one requirement at a time.", "Every requirement must hold. Test the exact capacity separately from a visitor count just below it.", "The comparison `visitors < capacity` excludes a full room. Combine it with `has_pass` and `is_open` using `and`, or use branches that enforce the same three requirements."],
+                     effort: .init(difficulty: .similar, scopeUnits: 1),
+                     checkPlan: .init(inputs: [
+                        .init(name: "visitors", defaultLiteral: "3"),
+                        .init(name: "capacity", defaultLiteral: "4"),
+                        .init(name: "has_pass", defaultLiteral: "True"),
+                        .init(name: "is_open", defaultLiteral: "True")
+                     ], checks: [
+                        .init(id: "original-entry", title: "Open room with a pass and space", target: "can_enter", expectedLiteral: "True"),
+                        .init(id: "full-room", title: "Exactly at capacity", inputs: ["visitors": "4"], target: "can_enter", expectedLiteral: "False"),
+                        .init(id: "above-capacity", title: "Already above capacity", inputs: ["visitors": "5"], target: "can_enter", expectedLiteral: "False"),
+                        .init(id: "missing-pass", title: "Space available but no pass", inputs: ["has_pass": "False"], target: "can_enter", expectedLiteral: "False"),
+                        .init(id: "closed-room", title: "Space and a pass but the room is closed", inputs: ["is_open": "False"], target: "can_enter", expectedLiteral: "False"),
+                        .init(id: "changed-capacity", title: "A larger room has space for the next visitor", inputs: ["visitors": "4", "capacity": "5"], target: "can_enter", expectedLiteral: "True"),
+                        .init(id: "zero-capacity", title: "An empty room with no capacity", inputs: ["visitors": "0", "capacity": "0"], target: "can_enter", expectedLiteral: "False"),
+                        .init(id: "empty-room", title: "An empty one-person room", inputs: ["visitors": "0", "capacity": "1"], target: "can_enter", expectedLiteral: "True")
+                     ]),
+                     practiceProfile: .init(form: .transfer, scaffolding: .independent,
+                                            skillIDs: ["decisions-section-1", "decisions-section-2", "decisions-section-3", "decisions-section-4"],
+                                            reflectionPrompts: ["Which input distinguishes a full room from one with space?", "How did you check that a pass cannot bypass a closed room?"]))
         ],
         assessment: exercise("decisions-assessment-v2", "Choose a safe deployment action", """
             Goal:

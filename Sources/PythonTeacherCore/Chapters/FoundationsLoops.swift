@@ -574,7 +574,52 @@ extension Curriculum {
                         .init(id: "different-start-visited", title: "Start 3 with target 12: values visited", inputs: ["start_value": "3", "target": "12"], target: "visited", expectedLiteral: "[6, 12]"),
                         .init(id: "above-target-value", title: "Start above the target: final value", inputs: ["start_value": "10"], target: "value", expectedLiteral: "10"),
                         .init(id: "above-target-visited", title: "Start above the target: values visited", inputs: ["start_value": "10"], target: "visited", expectedLiteral: "[]")
-                     ]))
+                     ])),
+            exercise("loops-transfer-water-log", "Summarize a garden water log", """
+                     Goal:
+                     Summarize an invented garden's watering records and collect the amounts meeting a chosen threshold. Choose your approach from the loops, decisions, and lists already taught.
+
+                     Starting code:
+                     - Keep the supplied input lines unchanged: `water_liters = [3, 7, 2, 7]` and `minimum_liters = 5`.
+                     - The log is a finite list of nonnegative integers, possibly empty, and the threshold is a nonnegative integer. No invalid values need handling.
+                     - Replace or extend the result placeholders `total_liters = 0`, `qualifying_count = 0`, and `qualifying_liters = []`. Keep the input list unchanged.
+
+                     Your task:
+                     1. Save the integer `total_liters` for every log entry, including amounts below the threshold.
+                     2. Save the integer `qualifying_count` and a new list `qualifying_liters` for entries at least `minimum_liters`, preserving their order and repeated values. Zero qualifies when the threshold is zero.
+
+                     Expected result:
+                     - The supplied inputs give `total_liters` equal to `19`, `qualifying_count` equal to `2`, and `qualifying_liters` equal to `[7, 7]`.
+                     - An empty log gives `0`, `0`, and `[]`.
+                     - Log `[0, 2, 0, 1]` with threshold `0` gives `3`, `4`, and `[0, 2, 0, 1]`.
+                     - Log `[1, 2]` with threshold `3` gives `3`, `0`, and `[]`.
+
+                     Check:
+                     Choose **Check solution**. Fresh named cases check the original total, each empty-log result, each zero-threshold result, and a list with no qualifying entries. Separate rows compare separate result variables; the original typed checks must pass too. A failed case leaves later cases not reached.
+
+                     To explore without changing your draft, awarding XP, or completing the exercise, enter Python literal values (directly written values such as `[0, 2]` and `0`) in the Experiment fields and choose **Run experiment**. Keep the supplied input lines unchanged for checking.
+                     """,
+                     "water_liters = [3, 7, 2, 7]\nminimum_liters = 5\ntotal_liters = 0\nqualifying_count = 0\nqualifying_liters = []\n",
+                     "water_liters = [3, 7, 2, 7]\nminimum_liters = 5\ntotal_liters = 0\nqualifying_count = 0\nqualifying_liters = []\nfor liters in water_liters:\n    total_liters += liters\n    if liters >= minimum_liters:\n        qualifying_count += 1\n        qualifying_liters.append(liters)\n",
+                     "assert water_liters == [3, 7, 2, 7] and minimum_liters == 5\nassert type(total_liters) is int and total_liters == 19\nassert type(qualifying_count) is int and qualifying_count == 2\nassert type(qualifying_liters) is list and qualifying_liters == [7, 7]\n",
+                     ["The total describes the whole log, while the count and list describe only qualifying entries. What should each result be before any entry is visited?", "Keep accumulated work between visits. The threshold comparison includes equality, and repeated entries are separate records.", "Initialize the total, count, and empty result list before a `for` loop. Add every amount to the total; when `liters >= minimum_liters`, increase the count and append that amount to the result list."],
+                     effort: .init(difficulty: .similar, scopeUnits: 2),
+                     checkPlan: .init(inputs: [
+                        .init(name: "water_liters", defaultLiteral: "[3, 7, 2, 7]"),
+                        .init(name: "minimum_liters", defaultLiteral: "5")
+                     ], checks: [
+                        .init(id: "original-total", title: "Original log: total includes small entries", target: "total_liters", expectedLiteral: "19"),
+                        .init(id: "empty-total", title: "Empty log: total", inputs: ["water_liters": "[]"], target: "total_liters", expectedLiteral: "0"),
+                        .init(id: "empty-count", title: "Empty log: qualifying count", inputs: ["water_liters": "[]"], target: "qualifying_count", expectedLiteral: "0"),
+                        .init(id: "empty-list", title: "Empty log: qualifying amounts", inputs: ["water_liters": "[]"], target: "qualifying_liters", expectedLiteral: "[]"),
+                        .init(id: "zero-threshold-total", title: "Zero threshold: total", inputs: ["water_liters": "[0, 2, 0, 1]", "minimum_liters": "0"], target: "total_liters", expectedLiteral: "3"),
+                        .init(id: "zero-threshold-count", title: "Zero threshold: zero entries also count", inputs: ["water_liters": "[0, 2, 0, 1]", "minimum_liters": "0"], target: "qualifying_count", expectedLiteral: "4"),
+                        .init(id: "zero-threshold-list", title: "Zero threshold: preserve order and repetitions", inputs: ["water_liters": "[0, 2, 0, 1]", "minimum_liters": "0"], target: "qualifying_liters", expectedLiteral: "[0, 2, 0, 1]"),
+                        .init(id: "no-qualifying-list", title: "All entries below the threshold", inputs: ["water_liters": "[1, 2]", "minimum_liters": "3"], target: "qualifying_liters", expectedLiteral: "[]")
+                     ]),
+                     practiceProfile: .init(form: .transfer, scaffolding: .independent,
+                                            skillIDs: ["loops-section-1", "loops-section-2", "decisions-section-1"],
+                                            reflectionPrompts: ["Which results depend on the threshold, and which do not?", "Why must a zero entry be counted when the threshold is zero?"]))
         ],
         assessment: exercise("loops-assessment", "Track consecutive passing checks", """
             Goal:

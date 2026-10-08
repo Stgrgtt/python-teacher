@@ -314,7 +314,101 @@ extension Curriculum {
                      "def total_retries(records):\n    if not isinstance(records, list):\n        raise ValueError('records must be a list')\n    for record in records:\n        if not isinstance(record, dict) or 'retries' not in record:\n            raise ValueError('each record needs retries')\n        retries = record['retries']\n        if type(retries) is not int or not 0 <= retries <= 5:\n            raise ValueError('retries must be an integer from 0 to 5')\n    total = 0\n    for record in records:\n        total += record['retries']\n    return total\n",
                      "assert total_retries([]) == 0\nassert type(total_retries([])) is int\nrecords = [{'retries': 2}, {'retries': 0, 'tag': 'keep'}, {'retries': 5}, {'retries': 2}]\nassert total_retries(records) == 9\nassert type(total_retries(records)) is int\nassert records == [{'retries': 2}, {'retries': 0, 'tag': 'keep'}, {'retries': 5}, {'retries': 2}]\ninvalid_records = [{'retries': 2}, {'retries': -1, 'tag': 'keep'}]\nraised = False\ntry:\n    total_retries(invalid_records)\nexcept ValueError as error:\n    raised = bool(str(error))\nassert raised, 'a later invalid record must raise ValueError with a message'\nassert invalid_records == [{'retries': 2}, {'retries': -1, 'tag': 'keep'}]\nfor invalid in [None, 'records', {}, ({'retries': 1},)]:\n    raised = False\n    try:\n        total_retries(invalid)\n    except ValueError as error:\n        raised = bool(str(error))\n    assert raised, 'invalid outer input must raise ValueError with a message'\nfor bad_record in [None, [], 1, {}, {'other': 2}, {'retries': -1}, {'retries': 6}, {'retries': True}, {'retries': False}, {'retries': 2.0}, {'retries': '2'}, {'retries': None}, {'retries': float('nan')}, {'retries': float('inf')}]:\n    for prefix in [[], [{'retries': 2}], [{'retries': 0}, {'retries': 5}]]:\n        raised = False\n        try:\n            total_retries(prefix + [bad_record])\n        except ValueError as error:\n            raised = bool(str(error))\n        assert raised, 'every invalid record must raise ValueError with a message'\nassert total_retries([{'retries': 5}]) == 5\nassert total_retries([{'retries': 0}]) == 0\nassert total_retries(records) == 9\nassert total_retries([]) == 0\nassert records == [{'retries': 2}, {'retries': 0, 'tag': 'keep'}, {'retries': 5}, {'retries': 2}]\n",
                      ["Compare the same invalid record alone and after a valid one. What changes about the work performed before the function returns?", "Trace which records reach the validation checks and which reach the summing loop. Every record used in the total needs the same checks first.", "The validation loop currently visits only the slice records[:1]. Visit the complete records list instead, keeping the type, required-field, and range checks before any accepted total is returned. Then rerun the later-record failure and valid-input regressions."],
-                     effort: .init(scopeUnits: 2))
+                     effort: .init(scopeUnits: 2)),
+            exercise("reliability-transfer-gradebook", "Summarize a synthetic gradebook", """
+                     Goal:
+                     Build a small independent gradebook function that rejects invalid records before returning a useful summary. Use only invented student names. This is one practice exercise, not a milestone project.
+
+                     Starting code:
+                     Keep `def gradebook_report(records):`. Replace the placeholder return. The caller supplies Python records, not JSON text; optional helper functions may clarify your design.
+
+                     Your task:
+                     1. Accept only an exact Python `list`. Every item must be an exact `dict` with required `student` and `points` fields. Ignore extra fields without changing them.
+                     2. Require `student` to be an exact `str` containing at least one non-whitespace character. Require `points` to be an exact `int` from `0` through `100`, including both endpoints. Reject Booleans, floats, numeric strings, and missing fields rather than converting them.
+                     3. Raise `ValueError` with any nonempty message for every invalid input, including an invalid record after valid ones. Do not return a partial report or a fallback result. Leave input unchanged on success and failure.
+                     4. Return a fresh dictionary with exactly `count` (integer number of records), `passed` (integer number with points at least `60`), and `mean_points` (unrounded numeric arithmetic mean). Count every record, even when student names repeat.
+                     5. For empty input return `{'count': 0, 'passed': 0, 'mean_points': 0.0}`. Compute fresh results on repeated calls, including after a rejected input.
+                     6. Plan examples for valid data, a boundary, and a late invalid record, then choose how to organize validation and calculation.
+
+                     Expected result:
+                     - `gradebook_report([{'student': ' Mira ', 'points': 60}, {'student': 'Jo', 'points': 0}, {'student': 'Mira', 'points': 90}])` returns `{'count': 3, 'passed': 2, 'mean_points': 50.0}`.
+                     - `gradebook_report([{'student': 'Jo', 'points': 59}])` returns `{'count': 1, 'passed': 0, 'mean_points': 59.0}`.
+                     - `gradebook_report([{'student': 'Jo', 'points': 60}, {'student': 'Mira', 'points': True}])` raises `ValueError` with a nonempty message. So do `None`, `[{}]`, blank names, string points, and out-of-range points.
+
+                     Check:
+                     Choose **Check solution**. Checks cover exact output keys and count types, mean without rounding, duplicates, empty input, the passing boundary, invalid types and fields in different positions, unchanged data, and valid calls after failure. Return Python data, not printed text.
+                     """,
+                     "def gradebook_report(records):\n    return {}\n",
+                     """
+                     def gradebook_report(records):
+                         if type(records) is not list:
+                             raise ValueError('records must be a list')
+                         total = 0
+                         passed = 0
+                         for record in records:
+                             if type(record) is not dict or 'student' not in record or 'points' not in record:
+                                 raise ValueError('each record needs student and points')
+                             student = record['student']
+                             points = record['points']
+                             if type(student) is not str or not student.strip():
+                                 raise ValueError('student must be nonblank text')
+                             if type(points) is not int or not 0 <= points <= 100:
+                                 raise ValueError('points must be an integer from 0 to 100')
+                             total += points
+                             if points >= 60:
+                                 passed += 1
+                         count = len(records)
+                         mean_points = 0.0
+                         if count:
+                             mean_points = total / count
+                         return {'count': count, 'passed': passed, 'mean_points': mean_points}
+                     """,
+                     """
+                     assert gradebook_report([]) == {'count': 0, 'passed': 0, 'mean_points': 0.0}
+                     records = [{'student': ' Mira ', 'points': 60, 'tag': 'keep'}, {'student': 'Jo', 'points': 0}, {'student': 'Mira', 'points': 90}, {'student': 'Mira', 'points': 90}]
+                     report = gradebook_report(records)
+                     assert type(report) is dict
+                     assert set(report) == {'count', 'passed', 'mean_points'}
+                     assert type(report['count']) is int and report['count'] == 4
+                     assert type(report['passed']) is int and report['passed'] == 3
+                     assert type(report['mean_points']) in (int, float) and report['mean_points'] == 60.0
+                     assert records == [{'student': ' Mira ', 'points': 60, 'tag': 'keep'}, {'student': 'Jo', 'points': 0}, {'student': 'Mira', 'points': 90}, {'student': 'Mira', 'points': 90}]
+                     assert gradebook_report([{'student': 'Jo', 'points': 59}]) == {'count': 1, 'passed': 0, 'mean_points': 59.0}
+                     assert gradebook_report([{'student': 'A', 'points': 60}, {'student': 'B', 'points': 100}]) == {'count': 2, 'passed': 2, 'mean_points': 80.0}
+                     fraction = gradebook_report([{'student': 'A', 'points': 0}, {'student': 'B', 'points': 0}, {'student': 'C', 'points': 1}])
+                     assert abs(fraction['mean_points'] - 1 / 3) < 1e-10
+                     for invalid in [None, True, 3, 'records', {}, ({'student': 'A', 'points': 1},)]:
+                         raised = False
+                         try:
+                             gradebook_report(invalid)
+                         except ValueError as error:
+                             raised = bool(str(error))
+                         assert raised, 'invalid outer input must raise ValueError with a message'
+                     for bad_record in [None, [], 1, True, {}, {'student': 'A'}, {'points': 50}, {'student': '', 'points': 50}, {'student': ' \\t\\n', 'points': 50}, {'student': 7, 'points': 50}, {'student': True, 'points': 50}, {'student': None, 'points': 50}, {'student': 'A', 'points': -1}, {'student': 'A', 'points': 101}, {'student': 'A', 'points': 10 ** 400}, {'student': 'A', 'points': True}, {'student': 'A', 'points': False}, {'student': 'A', 'points': 60.0}, {'student': 'A', 'points': '60'}, {'student': 'A', 'points': None}, {'student': 'A', 'points': float('nan')}, {'student': 'A', 'points': float('inf')}]:
+                         for prefix in [[], [{'student': 'Valid', 'points': 60}], [{'student': 'One', 'points': 0}, {'student': 'Two', 'points': 100}]]:
+                             raised = False
+                             try:
+                                 gradebook_report(prefix + [bad_record])
+                             except ValueError as error:
+                                 raised = bool(str(error))
+                             assert raised, 'every invalid record must raise ValueError with a message'
+                     invalid_records = [{'student': ' A ', 'points': 60, 'tag': 'keep'}, {'student': 'B', 'points': -1}]
+                     raised = False
+                     try:
+                         gradebook_report(invalid_records)
+                     except ValueError as error:
+                         raised = bool(str(error))
+                     assert raised
+                     assert invalid_records == [{'student': ' A ', 'points': 60, 'tag': 'keep'}, {'student': 'B', 'points': -1}]
+                     report['count'] = 99
+                     assert gradebook_report([{'student': 'Fresh', 'points': 0}]) == {'count': 1, 'passed': 0, 'mean_points': 0.0}
+                     assert gradebook_report(records) == {'count': 4, 'passed': 3, 'mean_points': 60.0}
+                     assert gradebook_report([]) == {'count': 0, 'passed': 0, 'mean_points': 0.0}
+                     assert records == [{'student': ' Mira ', 'points': 60, 'tag': 'keep'}, {'student': 'Jo', 'points': 0}, {'student': 'Mira', 'points': 90}, {'student': 'Mira', 'points': 90}]
+                     """,
+                     ["Separate the acceptance rules from the three report values. A valid first student does not establish that the rest of the gradebook is valid.", "Check container types and required fields before reading them. Use exact type checks so True and 60.0 cannot become accepted integer points, and use strip only to test whether a name is blank.", "Visit every record, raising ValueError with a message when a rule fails. For valid records add points and count scores >= 60. Return the full count, passing count, and total divided by count only after all visits; use 0.0 for an empty mean."],
+                     effort: .init(difficulty: .similar, scopeUnits: 3),
+                     practiceProfile: .init(form: .transfer, scaffolding: .independent, skillIDs: ["reliability-section-1", "reliability-section-2", "reliability-section-5", "reliability-section-6"], reflectionPrompts: ["Which example proves that validation reaches records after the first valid one?", "Why should repeated student names still contribute to the mean and passing count?"]))
         ],
         assessment: exercise("reliability-assessment", "Analyze a synthetic evaluation file", """
                              Goal:

@@ -42,9 +42,10 @@ final class NamedChecksCurriculumTests: XCTestCase {
         guard result.passed else { throw SandboxProbeFailure.failed(result.output) }
     }
 
-    func testOnlyFourReviewedLabsHaveValidNamedPlansAndAssessmentsHaveNone() throws {
+    func testReviewedNamedPlansPreserveOriginalLabsAndIncludeAdditiveTransfersWithoutAssessments() throws {
         let allPractice = Curriculum.chapters.flatMap(\.exercises)
-        XCTAssertEqual(Set(allPractice.filter { $0.checkPlan != nil }.map(\.id)), adoptedIDs)
+        let transferIDs: Set<String> = ["basics-transfer-delivery-note", "values-transfer-workshop-cost", "decisions-transfer-library-entry", "loops-transfer-water-log"]
+        XCTAssertEqual(Set(allPractice.filter { $0.checkPlan != nil }.map(\.id)), adoptedIDs.union(transferIDs))
         XCTAssertEqual(labs.count, 4)
         for exercise in labs {
             let plan = try XCTUnwrap(exercise.checkPlan, exercise.id)
