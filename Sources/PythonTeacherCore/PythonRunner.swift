@@ -37,14 +37,16 @@ public struct RunResult: Sendable {
     public let timedOut: Bool
     public let cancelled: Bool
     public let diagnostic: RunDiagnostic?
+    public let checkOutcomes: [CheckOutcome]
 
-    public init(output: String, exitCode: Int32, passed: Bool, timedOut: Bool, cancelled: Bool, diagnostic: RunDiagnostic? = nil) {
+    public init(output: String, exitCode: Int32, passed: Bool, timedOut: Bool, cancelled: Bool, diagnostic: RunDiagnostic? = nil, checkOutcomes: [CheckOutcome] = []) {
         self.output = output
         self.exitCode = exitCode
         self.passed = passed
         self.timedOut = timedOut
         self.cancelled = cancelled
         self.diagnostic = diagnostic
+        self.checkOutcomes = checkOutcomes
     }
 }
 
@@ -100,6 +102,100 @@ public final class PythonRunner: @unchecked Sendable {
         } onCancel: {
             control.stop(cancelled: true)
         }
+    }
+
+    public func check(code: String, exercise: Exercise, pythonPath: String, timeout: TimeInterval = 8) async throws -> RunResult {
+        guard let plan = exercise.checkPlan else {
+            return try await run(code: code, tests: exercise.testCode, pythonPath: pythonPath, timeout: timeout)
+        }
+        try plan.validate()
+        return try await runPlan(code: code, plan: plan, overrides: nil, tests: exercise.testCode, pythonPath: pythonPath, timeout: timeout)
+    }
+
+    public func experiment(code: String, plan: AuthoredCheckPlan, inputs: [String: String], pythonPath: String, timeout: TimeInterval = 8) async throws -> RunResult {
+        try plan.validate(overrides: inputs)
+        return try await runPlan(code: code, plan: plan, overrides: inputs, tests: nil, pythonPath: pythonPath, timeout: timeout)
+    }
+
+    private func runPlan(code: String, plan: AuthoredCheckPlan, overrides: [String: String]?, tests: String?, pythonPath: String, timeout: TimeInterval) async throws -> RunResult {
+        guard timeout.isFinite, timeout > 0 else { throw PythonRunnerError.invalidTimeout }
+        let deadline = ProcessInfo.processInfo.systemUptime + timeout
+        let id = UUID()
+        let control = RunControl()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                lock.withLock { active[id] = control }
+                if Task.isCancelled { control.stop(cancelled: true) }
+                DispatchQueue.global(qos: .userInitiated).async { [self] in
+                    let result = Result {
+                        try executePlan(code: code, plan: plan, overrides: overrides, tests: tests, pythonPath: pythonPath,
+                            deadline: deadline, control: control)
+                    }
+                    _ = lock.withLock { active.removeValue(forKey: id) }
+                    continuation.resume(with: result)
+                }
+            }
+        } onCancel: {
+            control.stop(cancelled: true)
+        }
+    }
+
+    private func executePlan(code: String, plan: AuthoredCheckPlan, overrides: [String: String]?, tests: String?, pythonPath: String,
+                             deadline: TimeInterval, control: RunControl) throws -> RunResult {
+        let deadlineTask = DispatchWorkItem { control.stop(cancelled: false, timedOut: true) }
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + max(0, deadline - ProcessInfo.processInfo.systemUptime), execute: deadlineTask)
+        defer { deadlineTask.cancel() }
+        var output = BoundedPlanOutput()
+        var outcomes: [CheckOutcome] = []
+        func remaining() -> TimeInterval {
+            let value = deadline - ProcessInfo.processInfo.systemUptime
+            if value <= 0 { control.stop(cancelled: false, timedOut: true) }
+            return max(0.001, value)
+        }
+        func finish(_ result: RunResult, suffix: String = "") -> RunResult {
+            output.append(result.output)
+            output.append(suffix)
+            return RunResult(output: output.text, exitCode: result.exitCode, passed: result.passed,
+                timedOut: result.timedOut, cancelled: result.cancelled, diagnostic: result.diagnostic, checkOutcomes: outcomes)
+        }
+        if let overrides {
+            let request = FixtureRequest(plan: plan, overrides: overrides, check: nil)
+            output.append(request.header)
+            let result = try execute(code: code, tests: nil, pythonPath: pythonPath, timeout: remaining(), control: control,
+                fixture: request, totalDeadline: deadline)
+            return finish(result)
+        }
+        for (index, check) in plan.checks.enumerated() {
+            let request = FixtureRequest(plan: plan, overrides: check.inputs, check: check)
+            output.append(request.header)
+            let result: RunResult
+            do {
+                result = try execute(code: code, tests: nil, pythonPath: pythonPath, timeout: remaining(), control: control,
+                    fixture: request, totalDeadline: deadline)
+            } catch {
+                result = RunResult(output: "[Named check could not start: \(error.localizedDescription)]\n", exitCode: -1,
+                    passed: false, timedOut: control.flags.timedOut, cancelled: control.flags.cancelled)
+            }
+            outcomes.append(result.checkOutcomes.first ?? CheckOutcome(id: check.id, title: check.title, status: .failed,
+                detail: result.timedOut ? "The total check deadline was reached." : result.cancelled ? "Execution was cancelled." : "The named check could not complete. See the original output."))
+            if !result.passed {
+                outcomes.append(contentsOf: plan.checks.dropFirst(index + 1).map {
+                    CheckOutcome(id: $0.id, title: $0.title, status: .notReached, detail: "An earlier case did not pass.")
+                })
+                return finish(result)
+            }
+            output.append(result.output)
+        }
+        output.append("\n[Original exercise checks on the saved source]\n")
+        let legacy: RunResult
+        do {
+            legacy = try execute(code: code, tests: tests, pythonPath: pythonPath, timeout: remaining(), control: control,
+                totalDeadline: deadline)
+        } catch {
+            legacy = RunResult(output: "[Original checks could not start: \(error.localizedDescription)]\n", exitCode: -1,
+                passed: false, timedOut: control.flags.timedOut, cancelled: control.flags.cancelled)
+        }
+        return finish(legacy, suffix: legacy.passed ? "" : "\n[Original exercise checks did not pass. Named cases alone cannot complete this exercise.]\n")
     }
 
     public func analyzeEffort(exercises: [Exercise], pythonPath: String) async throws -> [ExerciseEffort] {
@@ -172,8 +268,10 @@ public final class PythonRunner: @unchecked Sendable {
         }
     }
 
-    private func execute(code: String, tests: String?, pythonPath: String, timeout: TimeInterval, control: RunControl) throws -> RunResult {
+    private func execute(code: String, tests: String?, pythonPath: String, timeout: TimeInterval, control: RunControl,
+                         fixture: FixtureRequest? = nil, totalDeadline: TimeInterval? = nil) throws -> RunResult {
         guard timeout.isFinite, timeout > 0 else { throw PythonRunnerError.invalidTimeout }
+        if totalDeadline != nil, control.flags.cancelled || control.flags.timedOut { return stoppedResult(control) }
         let manager = FileManager.default
         guard manager.isExecutableFile(atPath: "/usr/bin/sandbox-exec") else {
             throw PythonRunnerError.sandboxUnavailable
@@ -199,13 +297,15 @@ public final class PythonRunner: @unchecked Sendable {
             "PATH": "/usr/bin:/bin", "HOME": workspace.path, "TMPDIR": temporary.path + "/",
             "LANG": "en_US.UTF-8", "LC_CTYPE": "UTF-8"
         ]
-        if control.flags.cancelled { return stoppedResult(control) }
+        if control.flags.cancelled || control.flags.timedOut { return stoppedResult(control) }
         let interpreter = try resolveInterpreter(pythonPath, environment: environment, control: control)
-        if control.flags.cancelled { return stoppedResult(control) }
+        if control.flags.cancelled || control.flags.timedOut { return stoppedResult(control) }
         let token = "\n__PYTHON_TEACHER_COMPLETE_\(UUID().uuidString.replacingOccurrences(of: "-", with: ""))__\n"
         let nonce = UUID().uuidString.replacingOccurrences(of: "-", with: "")
         let diagnosticStart = "\n__PYTHON_TEACHER_DIAGNOSTIC_\(nonce)_BEGIN__"
         let diagnosticEnd = "__PYTHON_TEACHER_DIAGNOSTIC_\(nonce)_END__\n"
+        let reportStart = "\n__PYTHON_TEACHER_CASE_\(nonce)_BEGIN__"
+        let reportEnd = "__PYTHON_TEACHER_CASE_\(nonce)_END__\n"
         var learnerLineCount = 1
         var previousByte: UInt8 = 0
         for byte in code.utf8 {
@@ -215,7 +315,8 @@ public final class PythonRunner: @unchecked Sendable {
             previousByte = byte
         }
         let script = harness(learner: learner.path, tests: tests == nil ? nil : testFile.path, token: token,
-            diagnosticStart: diagnosticStart, diagnosticEnd: diagnosticEnd, learnerLineCount: learnerLineCount)
+            diagnosticStart: diagnosticStart, diagnosticEnd: diagnosticEnd, learnerLineCount: learnerLineCount,
+            fixture: fixture, reportStart: reportStart, reportEnd: reportEnd)
         let input = Pipe()
         let output = Pipe()
         defer {
@@ -253,9 +354,10 @@ public final class PythonRunner: @unchecked Sendable {
             process.waitUntilExit()
             throw POSIXError(.EIO)
         }
-        let deadline = ProcessInfo.processInfo.systemUptime + timeout
+        let deadline = min(totalDeadline ?? .infinity, ProcessInfo.processInfo.systemUptime + timeout)
         var capture = OutputCapture(marker: Data(token.utf8), diagnosticStart: Data(diagnosticStart.utf8),
-            diagnosticEnd: Data(diagnosticEnd.utf8), learnerLineCount: learnerLineCount)
+            diagnosticEnd: Data(diagnosticEnd.utf8), learnerLineCount: learnerLineCount,
+            reportStart: fixture == nil ? nil : Data(reportStart.utf8), reportEnd: fixture == nil ? nil : Data(reportEnd.utf8))
         var bytes = [UInt8](repeating: 0, count: 8192)
         while true {
             for _ in 0..<16 {
@@ -281,7 +383,36 @@ public final class PythonRunner: @unchecked Sendable {
         let flags = control.flags
         var text = capture.text
         if let inputFailure { text += "\n" + inputFailure }
-        let passed = inputFailure == nil && process.terminationStatus == 0 && capture.completed && !flags.cancelled && !flags.timedOut
+        var passed = inputFailure == nil && process.terminationStatus == 0 && capture.completed && !flags.cancelled && !flags.timedOut
+        var outcomes: [CheckOutcome] = []
+        if let fixture {
+            let report = capture.reportInvalid ? nil : capture.report.flatMap { fixture.validatedReport($0) }
+            let completedNormally = passed
+            passed = passed && report != nil && (fixture.check == nil || report?.matched == true)
+            if let check = fixture.check {
+                let detail: String?
+                if flags.timedOut { detail = "The total check deadline was reached." }
+                else if flags.cancelled { detail = "Execution was cancelled." }
+                else if !completedNormally {
+                    detail = capture.diagnostic.map { "\($0.exceptionType): \($0.message)" }
+                        ?? "The case did not complete normally. See the original output."
+                }
+                else if report == nil { detail = "The case report was missing, malformed, or incomplete." }
+                else if report?.matched != true { detail = "The observed value did not match the expected value and type." }
+                else { detail = nil }
+                outcomes = [CheckOutcome(id: check.id, title: check.title, status: passed ? .passed : .failed,
+                    expected: report?.expected, actual: report?.observations.first?.value, detail: detail)]
+                if let report {
+                    text += "\nExpected: \(report.expected ?? check.expectedLiteral)\nActual: \(report.observations.first?.value ?? "[missing]")\n"
+                }
+                if let detail { text += "[\(detail)]\n" }
+            } else if let report {
+                text += "\n[Observed values — not graded]\n"
+                for observation in report.observations { text += "\(observation.target) = \(observation.value)\n" }
+            } else {
+                text += "\n[The experiment report was missing, malformed, or incomplete.]\n"
+            }
+        }
         if flags.timedOut { text += "\n[Execution timed out.]\n" }
         else if flags.cancelled { text += "\n[Execution cancelled.]\n" }
         else if process.terminationStatus == 0 && !capture.completed {
@@ -291,12 +422,14 @@ public final class PythonRunner: @unchecked Sendable {
             text += "\n[Sandboxed execution failed. No unrestricted fallback was attempted.]\n"
         }
         return RunResult(output: text, exitCode: process.terminationStatus, passed: passed, timedOut: flags.timedOut,
-            cancelled: flags.cancelled, diagnostic: passed || flags.timedOut || flags.cancelled ? nil : capture.diagnostic)
+            cancelled: flags.cancelled, diagnostic: passed || flags.timedOut || flags.cancelled ? nil : capture.diagnostic,
+            checkOutcomes: outcomes)
     }
 
     private func stoppedResult(_ control: RunControl) -> RunResult {
         let flags = control.flags
-        return RunResult(output: "[Execution cancelled.]\n", exitCode: -1, passed: false, timedOut: flags.timedOut, cancelled: flags.cancelled)
+        return RunResult(output: flags.timedOut ? "[Execution timed out.]\n" : "[Execution cancelled.]\n", exitCode: -1,
+            passed: false, timedOut: flags.timedOut, cancelled: flags.cancelled)
     }
 
     private func resolveInterpreter(_ path: String, environment: [String: String], control: RunControl) throws -> URL {
@@ -326,7 +459,7 @@ public final class PythonRunner: @unchecked Sendable {
             if discovery.isRunning { control.stop(cancelled: false) }
             discovery.waitUntilExit()
             try? output.fileHandleForWriting.close()
-            if control.flags.cancelled { return candidate }
+            if control.flags.cancelled || control.flags.timedOut { return candidate }
             let data = output.fileHandleForReading.readDataToEndOfFile()
             let found = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
             guard discovery.terminationStatus == 0, found.hasPrefix("/"), found != "/usr/bin/python3" else {
@@ -429,8 +562,191 @@ public final class PythonRunner: @unchecked Sendable {
         "\"" + string.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"").replacingOccurrences(of: "\n", with: "\\n").replacingOccurrences(of: "\r", with: "\\r") + "\""
     }
 
-    private func harness(learner: String, tests: String?, token: String, diagnosticStart: String, diagnosticEnd: String, learnerLineCount: Int) -> String {
+    private func fixturePreparation(_ request: FixtureRequest, reportStart: String, reportEnd: String) -> String {
+        let payload = (try? JSONEncoder().encode(request).base64EncodedString()) ?? ""
+        let source = """
+        def prepare_fixture():
+            import base64
+            import math
+            import keyword
+            from builtins import type, len, repr, str, int, float, bool, bytes, list, tuple, dict, sorted, enumerate, zip, ValueError, RuntimeError
+            finite = math.isfinite
+            encode_json = json.dumps
+            report_write = stderr.write
+            request = json.loads(base64.b64decode('\(payload)'))
+            check = request.get('check')
+            effective = request['effectiveInputs']
+            targets = request['targets']
+            for name in list(effective) + targets:
+                if not name.isidentifier() or keyword.iskeyword(name):
+                    raise ValueError('Input and observation targets must be plain variable names: ' + name)
+            def snapshot(value, depth=0, budget=None):
+                if budget is None:
+                    budget = [512, 2048]
+                budget[0] -= 1
+                if depth > 16 or budget[0] < 0:
+                    raise ValueError('Value exceeds the supported size or depth.')
+                kind = type(value)
+                if value is None:
+                    return ('none', None)
+                if kind is bool:
+                    return ('bool', value)
+                if kind is int:
+                    if int.bit_length(value) > 4096:
+                        raise ValueError('Integer is too large.')
+                    return ('int', value)
+                if kind is float:
+                    if not finite(value):
+                        raise ValueError('Only finite floats are supported.')
+                    return ('float', 0.0 if value == 0.0 else value)
+                if kind is str or kind is bytes:
+                    if len(value) > budget[1]:
+                        raise ValueError('Text value is too large.')
+                    size = len(str.encode(value, 'utf-8', 'replace')) if kind is str else len(value)
+                    budget[1] -= size
+                    if budget[1] < 0:
+                        raise ValueError('Text value is too large.')
+                    return ('str' if kind is str else 'bytes', value)
+                if kind is list or kind is tuple:
+                    if len(value) > budget[0]:
+                        raise ValueError('Collection is too large.')
+                    return ('list' if kind is list else 'tuple', tuple(snapshot(item, depth + 1, budget) for item in value))
+                if kind is dict:
+                    if len(value) * 2 > budget[0]:
+                        raise ValueError('Dictionary is too large.')
+                    pairs = [(snapshot(key, depth + 1, budget), snapshot(item, depth + 1, budget)) for key, item in dict.items(value)]
+                    return ('dict', tuple(sorted(pairs, key=repr)))
+                raise ValueError('Unsupported value type; only built-in literal values are supported.')
+            def display(value):
+                kind, item = value
+                if kind == 'none':
+                    return 'None'
+                if kind == 'list' or kind == 'tuple':
+                    text = ', '.join(display(child) for child in item)
+                    return '[' + text + ']' if kind == 'list' else '(' + text + (',' if len(item) == 1 else '') + ')'
+                if kind == 'dict':
+                    return '{' + ', '.join(display(key) + ': ' + display(child) for key, child in item) + '}'
+                return repr(item)
+            def bounded_display(value):
+                text = display(value)
+                data = str.encode(text, 'utf-8', 'replace')
+                return data[:1000].decode('utf-8', 'ignore') + ('...' if len(data) > 1000 else '')
+            def literal(node, label):
+                stack = [(node, 0)]
+                count = 0
+                while stack:
+                    current, depth = stack.pop()
+                    count += 1
+                    if count > 512 or depth > 16:
+                        raise ValueError(label + ': literal exceeds the supported size or depth.')
+                    stack.extend((child, depth + 1) for child in ast.iter_child_nodes(current))
+                try:
+                    return snapshot(ast.literal_eval(node))
+                except (ValueError, TypeError, SyntaxError, RecursionError) as error:
+                    raise ValueError(label + ': use a bounded Python literal with built-in values and finite numbers.') from error
+            def parse_literal(text, label):
+                if len(str.encode(text, 'utf-8')) > 2048:
+                    raise ValueError(label + ': literal is too large.')
+                try:
+                    node = ast.parse(text.strip(), mode='eval').body
+                except (SyntaxError, ValueError, RecursionError) as error:
+                    raise ValueError(label + ': enter a Python literal, not an expression or a call.') from error
+                return node, literal(node, label)
+            with open(learner_path, encoding='utf-8') as source:
+                tree = ast.parse(source.read(), filename=learner_path)
+            nodes = [(tree, 0)]
+            node_count = 0
+            while nodes:
+                node, depth = nodes.pop()
+                node_count += 1
+                if node_count > 50000 or depth > 256:
+                    raise ValueError('Source is too large or deeply nested for input fixtures.')
+                nodes.extend((child, depth + 1) for child in ast.iter_child_nodes(node))
+            declarations = {item['name']: item for item in request['inputs']}
+            bindings = {name: [] for name in declarations}
+            class Bindings(ast.NodeVisitor):
+                def record(self, name, node):
+                    if name in bindings:
+                        bindings[name].append(node)
+                def visit_Name(self, node):
+                    if isinstance(node.ctx, (ast.Store, ast.Del)):
+                        self.record(node.id, node)
+                def visit_FunctionDef(self, node):
+                    self.record(node.name, node)
+                    for child in node.decorator_list + [node.args] + ([node.returns] if node.returns is not None else []):
+                        self.visit(child)
+                visit_AsyncFunctionDef = visit_FunctionDef
+                def visit_ClassDef(self, node):
+                    self.record(node.name, node)
+                    for child in node.decorator_list + node.bases + node.keywords:
+                        self.visit(child)
+                def visit_Lambda(self, node):
+                    self.visit(node.args)
+                def visit_alias(self, node):
+                    self.record(node.asname or node.name.split('.')[0], node)
+                def visit_ExceptHandler(self, node):
+                    self.record(node.name, node)
+                    self.generic_visit(node)
+            Bindings().visit(tree)
+            for node in ast.walk(tree):
+                if isinstance(node, (ast.Global, ast.Nonlocal)):
+                    for name in node.names:
+                        if name in bindings:
+                            bindings[name].append(node)
+            for name, declaration in declarations.items():
+                candidates = [node for node in tree.body if isinstance(node, ast.Assign) and len(node.targets) == 1
+                              and isinstance(node.targets[0], ast.Name) and node.targets[0].id == name]
+                if len(candidates) != 1 or len(bindings[name]) != 1:
+                    raise ValueError('Input ' + name + ': keep exactly one simple top-level assignment, with no duplicate or compound bindings.')
+                assignment = candidates[0]
+                _, default = parse_literal(declaration['defaultLiteral'], 'Default for ' + name)
+                original = literal(assignment.value, 'Original input ' + name)
+                if original != default:
+                    raise ValueError('Input ' + name + ': restore its declared default literal before using checks or experiments.')
+                replacement, _ = parse_literal(effective[name], 'Input ' + name)
+                for child in ast.walk(replacement):
+                    ast.copy_location(child, assignment.value)
+                assignment.value = replacement
+            expected = None
+            if check is not None:
+                _, expected = parse_literal(check['expectedLiteral'], 'Expected value for ' + check['title'])
+            compiled = compile(ast.fix_missing_locations(tree), learner_path, 'exec')
+            def report(namespace):
+                observations = []
+                observed = None
+                for target in targets:
+                    try:
+                        value = namespace[target]
+                    except KeyError:
+                        observations.append({'target': target, 'value': '[missing variable]'})
+                        continue
+                    try:
+                        observed = snapshot(value)
+                        text = bounded_display(observed)
+                    except ValueError:
+                        observed = None
+                        text = '[unsupported or oversized value]'
+                    observations.append({'target': target, 'value': text})
+                result = {'mode': request['mode'], 'inputs': effective, 'observations': observations}
+                if check is not None:
+                    result.update({'id': check['id'], 'target': check['target'], 'expectedLiteral': check['expectedLiteral'],
+                                   'expected': bounded_display(expected), 'matched': observed is not None and observed == expected})
+                payload = encode_json(result, ensure_ascii=False, separators=(',', ':'))
+                if len(str.encode(payload, 'utf-8')) > 65536:
+                    raise RuntimeError('The bounded observation report was too large.')
+                report_write(\(quoted(reportStart)) + payload + \(quoted(reportEnd)))
+            return compiled, report
+        fixture_code, fixture_report = prepare_fixture()
+        """
+        return source.replacingOccurrences(of: "\n", with: "\n        ")
+    }
+
+    private func harness(learner: String, tests: String?, token: String, diagnosticStart: String, diagnosticEnd: String, learnerLineCount: Int,
+                         fixture: FixtureRequest?, reportStart: String, reportEnd: String) -> String {
         let testsLiteral = tests.map(quoted) ?? "None"
+        let preparation = fixture.map { fixturePreparation($0, reportStart: reportStart, reportEnd: reportEnd) } ?? ""
+        let execution = fixture == nil ? "namespace = runpy.run_path(learner_path, run_name=\"__main__\")" : "namespace = {'__name__': '__main__', '__file__': learner_path, '__package__': '', '__spec__': None, '__loader__': None, '__cached__': None}\n        exec(fixture_code, namespace, namespace)"
+        let observation = fixture == nil ? "" : "fixture_report(namespace)"
         return """
         def __python_teacher_main():
             import ast
@@ -510,9 +826,11 @@ public final class PythonRunner: @unchecked Sendable {
                         stage = 'runner'
                         raise RuntimeError("Tests must contain executable assert statements; no assertions were provided.")
                     compiled_tests = compile(ast.fix_missing_locations(tree), test_path, "exec")
+                \(preparation)
                 stage = 'learner'
-                namespace = runpy.run_path(learner_path, run_name="__main__")
+                \(execution)
                 stage = 'runner'
+                \(observation)
                 if test_path is not None:
                     namespace[counter_name] = checked.add
                     stage = 'checks'
@@ -537,6 +855,76 @@ public final class PythonRunner: @unchecked Sendable {
                     terminate(status)
         __python_teacher_main()
         """
+    }
+}
+
+private struct FixtureRequest: Encodable {
+    let inputs: [ExerciseInput]
+    let effectiveInputs: [String: String]
+    let check: NamedCheck?
+    let targets: [String]
+    let mode: String
+
+    init(plan: AuthoredCheckPlan, overrides: [String: String], check: NamedCheck?) {
+        inputs = plan.inputs
+        effectiveInputs = Dictionary(uniqueKeysWithValues: plan.inputs.map { ($0.name, overrides[$0.name] ?? $0.defaultLiteral) })
+        self.check = check
+        var seen = Set<String>()
+        targets = (check.map { [$0.target] } ?? plan.checks.map(\.target)).filter { seen.insert($0).inserted }
+        mode = check == nil ? "experiment" : "check"
+    }
+
+    var header: String {
+        let title = check?.title ?? "Experiment — not graded"
+        return "\n[\(title)]\n" + inputs.map { "\($0.name) = \(effectiveInputs[$0.name] ?? $0.defaultLiteral)\n" }.joined()
+    }
+
+    func validatedReport(_ data: Data) -> FixtureReport? {
+        guard data.count <= 65536, let value = try? JSONDecoder().decode(FixtureReport.self, from: data),
+              value.mode == mode, value.inputs == effectiveInputs,
+              value.observations.map(\.target) == targets,
+              value.observations.allSatisfy({ !$0.value.isEmpty && $0.value.utf8.count <= 1024 }) else { return nil }
+        if let check {
+            guard value.id == check.id, value.target == check.target, value.expectedLiteral == check.expectedLiteral,
+                  let expected = value.expected, !expected.isEmpty, expected.utf8.count <= 1024,
+                  value.matched != nil else { return nil }
+        } else {
+            guard value.id == nil, value.target == nil, value.expectedLiteral == nil, value.expected == nil, value.matched == nil else { return nil }
+        }
+        return value
+    }
+}
+
+private struct FixtureReport: Decodable {
+    struct Observation: Decodable {
+        let target: String
+        let value: String
+    }
+    let mode: String
+    let inputs: [String: String]
+    let observations: [Observation]
+    let id: String?
+    let target: String?
+    let expectedLiteral: String?
+    let expected: String?
+    let matched: Bool?
+}
+
+private struct BoundedPlanOutput {
+    private var stored = Data()
+    private let limit = 65536
+
+    mutating func append(_ text: String) {
+        stored.append(contentsOf: text.utf8)
+        if stored.count > limit {
+            let marker = Data("\n[Aggregate output truncated at 64 KiB; showing beginning and latest output.]\n".utf8)
+            stored = stored.prefix(32768) + marker + stored.suffix(limit - 32768 - marker.count)
+        }
+    }
+
+    var text: String {
+        let decoded = String(decoding: stored, as: UTF8.self)
+        return String(decoding: Data(decoded.utf8).prefix(limit - 3), as: UTF8.self)
     }
 }
 
@@ -579,6 +967,12 @@ struct OutputCapture {
     private let diagnosticStart: Data
     private let diagnosticEnd: Data
     private let learnerLineCount: Int
+    private let reportStart: Data?
+    private let reportEnd: Data?
+    private(set) var report: Data?
+    private(set) var reportInvalid = false
+    private var reportSeen = false
+    private let reportLimit = 65536
     private var pending = Data()
     private var stored = Data()
     private var truncated = false
@@ -587,11 +981,13 @@ struct OutputCapture {
     private let limit = 64 * 1024
     private let diagnosticLimit = 16 * 1024
 
-    init(marker: Data, diagnosticStart: Data, diagnosticEnd: Data, learnerLineCount: Int) {
+    init(marker: Data, diagnosticStart: Data, diagnosticEnd: Data, learnerLineCount: Int, reportStart: Data? = nil, reportEnd: Data? = nil) {
         self.marker = marker
         self.diagnosticStart = diagnosticStart
         self.diagnosticEnd = diagnosticEnd
         self.learnerLineCount = min(1_000_000, learnerLineCount)
+        self.reportStart = reportStart
+        self.reportEnd = reportEnd
     }
 
     mutating func consume(_ data: Data) {
@@ -608,6 +1004,32 @@ struct OutputCapture {
         while !pending.isEmpty {
             let completion = pending.range(of: marker)
             let start = pending.range(of: diagnosticStart)
+            let reportRange = reportStart.flatMap { pending.range(of: $0) }
+            if let reportRange, let reportStart, let reportEnd,
+               reportRange.lowerBound < (start?.lowerBound ?? pending.endIndex),
+               reportRange.lowerBound < (completion?.lowerBound ?? pending.endIndex) {
+                store(Data(pending[..<reportRange.lowerBound]))
+                pending.removeSubrange(pending.startIndex..<reportRange.lowerBound)
+                let payloadStart = pending.startIndex + reportStart.count
+                if let end = pending.range(of: reportEnd, in: payloadStart..<pending.endIndex) {
+                    let payload = Data(pending[payloadStart..<end.lowerBound])
+                    if reportSeen || payload.count > reportLimit {
+                        reportInvalid = true
+                        store(Data(pending[..<end.upperBound]))
+                    } else {
+                        report = payload
+                    }
+                    reportSeen = true
+                    pending.removeSubrange(pending.startIndex..<end.upperBound)
+                    continue
+                }
+                if pending.count <= reportStart.count + reportLimit + reportEnd.count - 1 { return }
+                reportInvalid = true
+                reportSeen = true
+                store(Data(pending.prefix(reportStart.count)))
+                pending.removeFirst(reportStart.count)
+                continue
+            }
             if let completion, completion.lowerBound < (start?.lowerBound ?? pending.endIndex) {
                 store(Data(pending[..<completion.lowerBound]))
                 pending.removeSubrange(pending.startIndex..<completion.upperBound)
@@ -633,7 +1055,7 @@ struct OutputCapture {
                 pending.removeFirst(diagnosticStart.count)
                 continue
             }
-            let safeCount = max(0, pending.count - max(marker.count, diagnosticStart.count) + 1)
+            let safeCount = max(0, pending.count - max(marker.count, diagnosticStart.count, reportStart?.count ?? 0) + 1)
             if safeCount > 0 {
                 store(Data(pending.prefix(safeCount)))
                 pending.removeFirst(safeCount)
@@ -657,6 +1079,7 @@ struct OutputCapture {
     }
 
     mutating func finish() {
+        if let reportStart, pending.range(of: reportStart) != nil { reportInvalid = true }
         store(pending)
         pending.removeAll()
     }

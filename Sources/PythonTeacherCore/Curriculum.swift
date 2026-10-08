@@ -34,8 +34,8 @@ public enum Curriculum {
         "reliability-assessment": .init(difficulty: .harder, scopeUnits: 4)
     ]
 
-    static func exercise(_ id: String, _ title: String, _ instructions: String, _ starter: String, _ solution: String, _ tests: String, _ hints: [String], effort: ExerciseEffort? = nil, expectedStarterError: String? = nil) -> Exercise {
-        Exercise(id: id, title: title, instructions: instructions, starterCode: starter, referenceSolution: solution, testCode: tests, hints: hints, effort: effort ?? efforts[id], expectedStarterError: expectedStarterError)
+    static func exercise(_ id: String, _ title: String, _ instructions: String, _ starter: String, _ solution: String, _ tests: String, _ hints: [String], effort: ExerciseEffort? = nil, expectedStarterError: String? = nil, checkPlan: AuthoredCheckPlan? = nil) -> Exercise {
+        Exercise(id: id, title: title, instructions: instructions, starterCode: starter, referenceSolution: solution, testCode: tests, hints: hints, effort: effort ?? efforts[id], expectedStarterError: expectedStarterError, checkPlan: checkPlan)
     }
 
     static func question(_ id: String, _ prompt: String, _ options: [String], _ answer: Int, _ explanation: String) -> QuizQuestion {

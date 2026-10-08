@@ -39,6 +39,11 @@ public enum PracticeStyle: String, CaseIterable, Sendable {
     case complete = "Complete starter code"
     case debug = "Debug broken code"
 
+    public func acceptsStarterFailure(_ result: RunResult) -> Bool {
+        guard !result.passed, !result.timedOut, !result.cancelled else { return false }
+        return self != .debug || (result.exitCode > 0 && result.diagnostic?.exceptionType == "AssertionError" && result.diagnostic?.origin == .checks)
+    }
+
     public var guidance: String {
         switch self {
         case .write: return "Supply inputs and minimal result or function placeholders; the learner writes the logic."
@@ -190,6 +195,102 @@ public struct ExerciseEffort: Codable, Equatable, Sendable {
     }
 }
 
+public struct ExerciseInput: Codable, Equatable, Sendable {
+    public let name: String
+    public let defaultLiteral: String
+
+    public init(name: String, defaultLiteral: String) {
+        self.name = name
+        self.defaultLiteral = defaultLiteral
+    }
+}
+
+public struct NamedCheck: Codable, Equatable, Sendable {
+    public let id: String
+    public let title: String
+    public let inputs: [String: String]
+    public let target: String
+    public let expectedLiteral: String
+
+    public init(id: String, title: String, inputs: [String: String] = [:], target: String, expectedLiteral: String) {
+        self.id = id
+        self.title = title
+        self.inputs = inputs
+        self.target = target
+        self.expectedLiteral = expectedLiteral
+    }
+}
+
+public enum CheckPlanError: LocalizedError, Sendable {
+    case invalid(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .invalid(let reason): return "The input experiment or named checks could not start: \(reason)"
+        }
+    }
+}
+
+public struct AuthoredCheckPlan: Codable, Equatable, Sendable {
+    public let inputs: [ExerciseInput]
+    public let checks: [NamedCheck]
+    public static let maximumChecks = 16
+    public static let maximumInputs = 8
+    public static let maximumLiteralBytes = 2_048
+
+    public init(inputs: [ExerciseInput], checks: [NamedCheck]) {
+        self.inputs = inputs
+        self.checks = checks
+    }
+
+    public func validate(overrides: [String: String] = [:]) throws {
+        let keywords: Set<String> = ["False", "None", "True", "and", "as", "assert", "async", "await", "break", "class", "continue", "def", "del", "elif", "else", "except", "finally", "for", "from", "global", "if", "import", "in", "is", "lambda", "nonlocal", "not", "or", "pass", "raise", "return", "try", "while", "with", "yield"]
+        func identifier(_ value: String) -> Bool {
+            !value.hasPrefix("__") && !keywords.contains(value)
+                && value.range(of: #"\A[A-Za-z_][A-Za-z0-9_]{0,63}\z"#, options: .regularExpression) != nil
+        }
+        func literal(_ value: String) -> Bool {
+            !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && value.utf8.count <= Self.maximumLiteralBytes
+        }
+        let names = Set(inputs.map(\.name))
+        guard inputs.count <= Self.maximumInputs, names.count == inputs.count,
+              inputs.allSatisfy({ identifier($0.name) && literal($0.defaultLiteral) }),
+              !checks.isEmpty, checks.count <= Self.maximumChecks,
+              Set(checks.map(\.id)).count == checks.count,
+              checks.allSatisfy({ check in
+                  check.id.range(of: #"\A[A-Za-z0-9][A-Za-z0-9_-]{0,79}\z"#, options: .regularExpression) != nil
+                      && !check.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && check.title.utf8.count <= 160
+                      && check.title.unicodeScalars.allSatisfy { !CharacterSet.controlCharacters.contains($0) }
+                      && identifier(check.target) && literal(check.expectedLiteral)
+                      && Set(check.inputs.keys).isSubset(of: names) && check.inputs.values.allSatisfy(literal)
+              }), Set(overrides.keys).isSubset(of: names), overrides.values.allSatisfy(literal) else {
+            throw CheckPlanError.invalid("Use a bounded authored plan with unique case IDs, declared input names, and nonempty literal values.")
+        }
+    }
+}
+
+public enum RunCheckStatus: String, Codable, Sendable {
+    case passed, failed, notReached
+}
+
+public struct CheckOutcome: Codable, Equatable, Sendable {
+    public let id: String
+    public let title: String
+    public let status: RunCheckStatus
+    public let expected: String?
+    public let actual: String?
+    public let detail: String?
+
+    public init(id: String, title: String, status: RunCheckStatus, expected: String? = nil, actual: String? = nil, detail: String? = nil) {
+        self.id = id
+        self.title = title
+        self.status = status
+        self.expected = expected
+        self.actual = actual
+        self.detail = detail
+    }
+}
+
 public struct Exercise: Codable, Identifiable, Equatable, Sendable {
     public var id: String
     public var title: String
@@ -200,6 +301,7 @@ public struct Exercise: Codable, Identifiable, Equatable, Sendable {
     public var hints: [String]
     public var effort: ExerciseEffort?
     public var expectedStarterError: String?
+    public var checkPlan: AuthoredCheckPlan?
 
     static let instructionSectionTitles = ["Goal", "Starting code", "Your task", "Expected result", "Check"]
 
@@ -221,7 +323,7 @@ public struct Exercise: Codable, Identifiable, Equatable, Sendable {
         }
     }
 
-    public init(id: String, title: String, instructions: String, starterCode: String, referenceSolution: String, testCode: String, hints: [String], effort: ExerciseEffort? = nil, expectedStarterError: String? = nil) {
+    public init(id: String, title: String, instructions: String, starterCode: String, referenceSolution: String, testCode: String, hints: [String], effort: ExerciseEffort? = nil, expectedStarterError: String? = nil, checkPlan: AuthoredCheckPlan? = nil) {
         self.id = id
         self.title = title
         self.instructions = instructions
@@ -231,6 +333,7 @@ public struct Exercise: Codable, Identifiable, Equatable, Sendable {
         self.hints = hints
         self.effort = effort
         self.expectedStarterError = expectedStarterError
+        self.checkPlan = checkPlan
     }
 }
 

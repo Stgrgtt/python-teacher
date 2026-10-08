@@ -379,7 +379,11 @@ extension Curriculum {
 
         For a `while` trace, write down the starting value, the condition before each visit, and the value after each update. Decide whether an exactly reached threshold should allow another visit. A condition checked before the body and a value recorded after the update describe different moments.
 
-        Prediction labs ask you to keep a separate prediction of the original sequence while repairing the loop. A saved prediction is evidence about reading that example, not proof of a general algorithm. Run a nearby threshold too, and restore the required inputs before checking. Keep the update that moves the loop toward stopping.
+        Prediction labs ask you to keep a separate prediction of the original sequence while repairing the loop. A saved prediction is evidence about reading the original starter with its supplied inputs, not proof of a general algorithm. Keep that prediction fixed even when trying other inputs. Keep the update that moves the loop toward stopping.
+
+        In labs with **Experiment** fields, leave the supplied input lines unchanged in your code. Enter Python literal values in the fields, such as `5` or `[2, 0, 5]`: values written directly, not calculations or commands. Choose **Run experiment** to observe a fresh run without changing your draft or awarding XP or completion.
+
+        **Check solution** runs each named case afresh and compares expected and actual values. It stops at the first failed case and marks later cases not reached. The original checks still verify your prediction for the original starter. Other input cases check the repaired calculation, not a new prediction.
         """,
         exercises: [
             exercise("loops-total", "Count usable measurements", """
@@ -500,13 +504,29 @@ extension Curriculum {
                 - `first_wrong_visit` identifies the earliest difference in the original trace, not the repaired one.
 
                 Check:
-                Choose **Check solution**. It checks the unchanged list, the original first-divergence answer, and the repaired total and trace for this example. The visit number alone does not demonstrate a working accumulator.
+                Choose **Check solution**. Named cases check the original amounts, an empty list, one amount, and negative and zero amounts. Separate rows compare the integer `total` and the ordered `totals_after` trace. Every row reruns your code from a fresh start. A failure stops the check and leaves later rows not reached; the original checks must pass too.
+
+                Keep `first_wrong_visit` as your diagnosis of the original starter with `[4, 3, 2]`, regardless of the other cases or experiments. Only the original checks assess that prediction; the visit number alone does not demonstrate a working accumulator.
+
+                Keep the supplied input line unchanged. To try your own case, enter a Python literal list in the Experiment field `amounts`, such as `[2, 0, 5]`, then choose **Run experiment**. This shows results without changing your draft, awarding XP, or completing the exercise.
                 """,
                      "amounts = [4, 3, 2]\nfirst_wrong_visit = 0\ntotal = 0\ntotals_after = []\nfor amount in amounts:\n    total = 0\n    total += amount\n    totals_after.append(total)\n",
                      "amounts = [4, 3, 2]\nfirst_wrong_visit = 2\ntotal = 0\ntotals_after = []\nfor amount in amounts:\n    total += amount\n    totals_after.append(total)\n",
                      "assert amounts == [4, 3, 2]\nassert type(first_wrong_visit) is int and first_wrong_visit == 2\nassert type(total) is int and total == 9\nassert totals_after == [4, 7, 9]\n",
                      ["Compare one visit at a time. The first amount alone cannot reveal whether earlier work will survive the next visit.", "The first visit correctly produces 4. The second should produce 7, but the original produces 3: inspect every assignment made during visit 2.", "Save `2` as the original first wrong visit. Initialize `total` only before the loop, remove its reset inside the loop, and keep appending after each addition."],
-                     effort: .init(difficulty: .similar, scopeUnits: 2)),
+                     effort: .init(difficulty: .similar, scopeUnits: 2),
+                     checkPlan: .init(inputs: [
+                        .init(name: "amounts", defaultLiteral: "[4, 3, 2]")
+                     ], checks: [
+                        .init(id: "original-total", title: "Original amounts: total", target: "total", expectedLiteral: "9"),
+                        .init(id: "original-trace", title: "Original amounts: totals after each visit", target: "totals_after", expectedLiteral: "[4, 7, 9]"),
+                        .init(id: "empty-total", title: "Empty input: total", inputs: ["amounts": "[]"], target: "total", expectedLiteral: "0"),
+                        .init(id: "empty-trace", title: "Empty input: totals after each visit", inputs: ["amounts": "[]"], target: "totals_after", expectedLiteral: "[]"),
+                        .init(id: "single-total", title: "One amount: total", inputs: ["amounts": "[5]"], target: "total", expectedLiteral: "5"),
+                        .init(id: "single-trace", title: "One amount: totals after each visit", inputs: ["amounts": "[5]"], target: "totals_after", expectedLiteral: "[5]"),
+                        .init(id: "negative-zero-total", title: "Negative and zero amounts: total", inputs: ["amounts": "[4, -3, 0, 2]"], target: "total", expectedLiteral: "3"),
+                        .init(id: "negative-zero-trace", title: "Negative and zero amounts: totals after each visit", inputs: ["amounts": "[4, -3, 0, 2]"], target: "totals_after", expectedLiteral: "[4, 1, 1, 3]")
+                     ])),
             exercise("loops-predict-threshold", "Predict and debug: stop at the target", """
                 Goal:
                 Predict a loop's sequence and repair its stopping behavior. The starter finishes above the target even though it reached that target on an earlier visit.
@@ -529,13 +549,32 @@ extension Curriculum {
                 - With `target = 5`, it would record `[4, 8]` and stop at `8`.
 
                 Check:
-                Choose **Check solution**. It checks the original inputs, original-sequence prediction, and repaired results for target `8`. Try the other targets yourself, then restore `target = 8`; a correct prediction alone does not prove the repair works generally.
+                Choose **Check solution**. Named cases check the original inputs, an already reached target of `2`, an overshoot with target `5`, start `3` with target `12`, and start `10` already above target `8`. Separate rows compare the integer `value` and the ordered `visited` sequence. Every row reruns your code from a fresh start. A failure stops the check and leaves later rows not reached; the original checks must pass too.
+
+                Keep `predicted_before` as your prediction of the original starter with start `2` and target `8`, regardless of other cases or experiments. Only the original checks assess that prediction; a correct prediction alone does not prove the repair works generally.
+
+                Keep the supplied input lines unchanged. To try your own case, enter positive integer Python literal values in the Experiment fields `start_value` and `target`, such as `3` and `12`, then choose **Run experiment**. This shows results without changing your draft, awarding XP, or completing the exercise.
                 """,
                      "start_value = 2\ntarget = 8\npredicted_before = []\nvalue = start_value\nvisited = []\nwhile value <= target:\n    value = value * 2\n    visited.append(value)\n",
                      "start_value = 2\ntarget = 8\npredicted_before = [4, 8, 16]\nvalue = start_value\nvisited = []\nwhile value < target:\n    value = value * 2\n    visited.append(value)\n",
                      "assert start_value == 2 and target == 8\nassert predicted_before == [4, 8, 16]\nassert visited == [4, 8]\nassert type(value) is int and value == 8\n",
                      ["Trace the condition before each visit and the appended value after the update; those are different moments.", "In the original loop, equality at 8 still allows a visit. That visit doubles before appending, so the recorded sequence goes beyond 8.", "Keep `[4, 8, 16]` as the original prediction. Change the loop condition to `value < target` and retain the doubling and append inside the body."],
-                     effort: .init(difficulty: .similar, scopeUnits: 2))
+                     effort: .init(difficulty: .similar, scopeUnits: 2),
+                     checkPlan: .init(inputs: [
+                        .init(name: "start_value", defaultLiteral: "2"),
+                        .init(name: "target", defaultLiteral: "8")
+                     ], checks: [
+                        .init(id: "original-value", title: "Original target: final value", target: "value", expectedLiteral: "8"),
+                        .init(id: "original-visited", title: "Original target: values visited", target: "visited", expectedLiteral: "[4, 8]"),
+                        .init(id: "already-reached-value", title: "Already at the target: final value", inputs: ["target": "2"], target: "value", expectedLiteral: "2"),
+                        .init(id: "already-reached-visited", title: "Already at the target: values visited", inputs: ["target": "2"], target: "visited", expectedLiteral: "[]"),
+                        .init(id: "overshoot-value", title: "Target between doublings: final value", inputs: ["target": "5"], target: "value", expectedLiteral: "8"),
+                        .init(id: "overshoot-visited", title: "Target between doublings: values visited", inputs: ["target": "5"], target: "visited", expectedLiteral: "[4, 8]"),
+                        .init(id: "different-start-value", title: "Start 3 with target 12: final value", inputs: ["start_value": "3", "target": "12"], target: "value", expectedLiteral: "12"),
+                        .init(id: "different-start-visited", title: "Start 3 with target 12: values visited", inputs: ["start_value": "3", "target": "12"], target: "visited", expectedLiteral: "[6, 12]"),
+                        .init(id: "above-target-value", title: "Start above the target: final value", inputs: ["start_value": "10"], target: "value", expectedLiteral: "10"),
+                        .init(id: "above-target-visited", title: "Start above the target: values visited", inputs: ["start_value": "10"], target: "visited", expectedLiteral: "[]")
+                     ]))
         ],
         assessment: exercise("loops-assessment", "Track consecutive passing checks", """
             Goal:

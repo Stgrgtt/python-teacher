@@ -83,11 +83,15 @@ extension Curriculum {
 
         ### Try another row of your table
 
-        1. Temporarily change an input line.
-        2. Run the code and read the printed result.
-        3. Restore the original input before choosing **Check solution**.
+        Some debugging labs provide **Experiment** fields for their declared inputs: the input names the app can vary safely.
 
-        The checker expects the original input values.
+        1. Keep the supplied input lines unchanged in your code.
+        2. Enter a Python literal value in an Experiment field, such as `11` or `False`. A literal is a value written directly, not a calculation or a command.
+        3. Choose **Run experiment** and read the saved result. Each experiment starts fresh, without changing your draft or awarding XP or completion.
+
+        **Check solution** runs the named cases afresh, compares expected and actual values, then checks the original example. A failed case stops the check; later cases are marked not reached. Passing several cases is useful evidence, not proof for every possible input.
+
+        For exercises without Experiment fields, temporarily change an input line, run the code, then restore the original input before choosing **Check solution**.
 
         ### Find one counterexample
 
@@ -110,7 +114,7 @@ extension Curriculum {
 
         Both comparisons run successfully. Three people distinguish the rules; four would not. For a priority rule, choose inputs where both conditions hold, then trace every assignment to the result. A later independent `if` can replace an earlier decision.
 
-        A fixed-input check confirms that example only. After repairing a rule, temporarily try a nearby value and a conflicting case, then restore the supplied inputs before checking.
+        A fixed-input check confirms that example only. After repairing a rule, try a nearby value and a conflicting case. Use Experiment fields when available so the supplied input lines stay unchanged; otherwise restore the supplied inputs before checking.
 
         ## Combine conditions with and, or, and not
 
@@ -328,13 +332,25 @@ extension Curriculum {
                 - Without maintenance, six guests would give `'open'` and one guest would give `'waiting'`.
 
                 Check:
-                Choose **Check solution**. It checks the unchanged inputs and status for the conflicting-condition example. Try the other cases yourself and restore the supplied inputs before checking.
+                Choose **Check solution**. Named cases check maintenance with six and one guests, then no maintenance with one, two, and six guests. Each case reruns your code from a fresh start and compares `status` with the expected text. A failure stops the check and leaves later cases not reached; the original checks must pass too.
+
+                Keep the supplied input lines unchanged. To try your own case, enter Python literal values in the Experiment fields `maintenance` and `guests`, such as `False` and `2`, then choose **Run experiment**. This shows the result without changing your draft, awarding XP, or completing the exercise.
                 """,
                      "maintenance = True\nguests = 6\nif maintenance:\n    status = 'closed'\nif guests >= 2:\n    status = 'open'\nelse:\n    status = 'waiting'\n",
                      "maintenance = True\nguests = 6\nif maintenance:\n    status = 'closed'\nelif guests >= 2:\n    status = 'open'\nelse:\n    status = 'waiting'\n",
                      "assert maintenance is True and guests == 6\nassert status == 'closed'\n",
                      ["Both conditions are true for these inputs. Follow the entire program rather than stopping at the first saved status.", "Independent `if` statements are each checked. An `if`/`elif` chain chooses only the first matching branch.", "Keep the maintenance branch first and make the guest comparison an `elif`, with the waiting `else` attached to that single chain."],
-                     effort: .init(difficulty: .similar, scopeUnits: 1)),
+                     effort: .init(difficulty: .similar, scopeUnits: 1),
+                     checkPlan: .init(inputs: [
+                        .init(name: "maintenance", defaultLiteral: "True"),
+                        .init(name: "guests", defaultLiteral: "6")
+                     ], checks: [
+                        .init(id: "maintenance-many", title: "Maintenance with six guests: closed", target: "status", expectedLiteral: "'closed'"),
+                        .init(id: "maintenance-few", title: "Maintenance with one guest: closed", inputs: ["guests": "1"], target: "status", expectedLiteral: "'closed'"),
+                        .init(id: "no-maintenance-few", title: "One guest without maintenance: waiting", inputs: ["maintenance": "False", "guests": "1"], target: "status", expectedLiteral: "'waiting'"),
+                        .init(id: "no-maintenance-boundary", title: "Exactly two guests: open", inputs: ["maintenance": "False", "guests": "2"], target: "status", expectedLiteral: "'open'"),
+                        .init(id: "no-maintenance-many", title: "Six guests without maintenance: open", inputs: ["maintenance": "False"], target: "status", expectedLiteral: "'open'")
+                     ])),
             exercise("decisions-debug-entry-boundary", "Debug: entry at the boundary", """
                 Goal:
                 Repair an entry decision that saves `False` for an approved learner exactly at the minimum age, although the rule permits entry.
@@ -354,13 +370,26 @@ extension Curriculum {
                 - At age `13` without approval, it would also be `False`.
 
                 Check:
-                Choose **Check solution**. It checks the fixed inputs and Boolean result at equality. Try the other two cases yourself, then restore the original inputs. One passing case does not establish the whole rule.
+                Choose **Check solution**. Named cases check equality, an age below the minimum, missing approval above the minimum, and ages below and above a changed minimum of `18`. Each case reruns your code from a fresh start and compares the Boolean `can_enter` with the expected value. A failure stops the check and leaves later cases not reached; the original checks must pass too.
+
+                Keep the supplied input lines unchanged. To try your own case, enter Python literal values in the Experiment fields `age`, `minimum_age`, and `approved`, such as `13`, `12`, and `False`, then choose **Run experiment**. This shows the result without changing your draft, awarding XP, or completing the exercise. One passing case does not establish the whole rule.
                 """,
                      "age = 12\nminimum_age = 12\napproved = True\ncan_enter = age > minimum_age and approved\n",
                      "age = 12\nminimum_age = 12\napproved = True\ncan_enter = age >= minimum_age and approved\n",
                      "assert age == 12 and minimum_age == 12 and approved is True\nassert can_enter is True\n",
                      ["At least includes the minimum itself. Check the age comparison separately from the approval requirement.", "Exactly equal inputs distinguish `>` from `>=`. Both requirements must still hold, so keep the approval check.", "Use `age >= minimum_age and approved` to include equality while still rejecting learners without approval."],
-                     effort: .init(difficulty: .easier, scopeUnits: 1))
+                     effort: .init(difficulty: .easier, scopeUnits: 1),
+                     checkPlan: .init(inputs: [
+                        .init(name: "age", defaultLiteral: "12"),
+                        .init(name: "minimum_age", defaultLiteral: "12"),
+                        .init(name: "approved", defaultLiteral: "True")
+                     ], checks: [
+                        .init(id: "at-minimum", title: "At the minimum with approval: entry allowed", target: "can_enter", expectedLiteral: "True"),
+                        .init(id: "below-minimum", title: "Below the minimum: entry denied", inputs: ["age": "11"], target: "can_enter", expectedLiteral: "False"),
+                        .init(id: "without-approval", title: "Above the minimum without approval: entry denied", inputs: ["age": "13", "approved": "False"], target: "can_enter", expectedLiteral: "False"),
+                        .init(id: "changed-minimum-below", title: "Age 17 with a minimum of 18: entry denied", inputs: ["age": "17", "minimum_age": "18"], target: "can_enter", expectedLiteral: "False"),
+                        .init(id: "changed-minimum-above", title: "Age 19 with a minimum of 18 and approval: entry allowed", inputs: ["age": "19", "minimum_age": "18"], target: "can_enter", expectedLiteral: "True")
+                     ]))
         ],
         assessment: exercise("decisions-assessment-v2", "Choose a safe deployment action", """
             Goal:
