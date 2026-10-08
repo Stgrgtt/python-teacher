@@ -14,7 +14,7 @@ final class CurriculumTests: XCTestCase {
             XCTAssertTrue(chapter.lesson.contains("```python\n"), chapter.id)
             let words = chapter.lesson.split(whereSeparator: { $0.isWhitespace }).count
             XCTAssertGreaterThanOrEqual(words, 200, "\(chapter.id): \(words) lesson words")
-            XCTAssertEqual(chapter.exercises.count, 3, chapter.id)
+            XCTAssertGreaterThanOrEqual(chapter.exercises.count, 3, chapter.id)
             XCTAssertEqual(chapter.quiz.count, 3, chapter.id)
             XCTAssertFalse(chapter.exercises.contains { $0.id == chapter.assessment.id }, chapter.id)
             XCTAssertFalse(chapter.exercises.contains { $0.referenceSolution == chapter.assessment.referenceSolution }, chapter.id)
@@ -45,7 +45,7 @@ final class CurriculumTests: XCTestCase {
                 XCTAssertEqual(Set(question.options).count, question.options.count, question.id)
             }
         }
-        XCTAssertEqual(exerciseIDs.count, Curriculum.chapters.count * 4)
+        XCTAssertEqual(exerciseIDs.count, Curriculum.chapters.reduce(0) { $0 + $1.exercises.count + 1 })
         XCTAssertEqual(questionIDs.count, Curriculum.chapters.count * 3)
     }
 
@@ -358,7 +358,9 @@ final class CurriculumTests: XCTestCase {
                 let starter = try await runner.run(code: exercise.starterCode, tests: exercise.testCode, pythonPath: python)
                 XCTAssertFalse(starter.passed, "\(exercise.id) starter unexpectedly passed")
                 XCTAssertFalse(starter.timedOut, exercise.id)
-                XCTAssertTrue(starter.output.contains("AssertionError"), "\(exercise.id) starter should fail an assertion, not syntax or infrastructure: \(starter.output)")
+                XCTAssertFalse(starter.cancelled, exercise.id)
+                XCTAssertEqual(starter.diagnostic?.exceptionType, exercise.expectedStarterError ?? "AssertionError",
+                               "\(exercise.id) starter must fail for its authored reason, not infrastructure: \(starter.output)")
             }
         }
     }

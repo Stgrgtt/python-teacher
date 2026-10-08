@@ -8,7 +8,228 @@ Build a personal, native macOS learning workspace that helps the learner become 
 
 A launchable Mac application with a native code editor, a reviewed foundational Python curriculum, on-demand practice variations when an OpenAI key is configured, local execution and tests, graduated hints, coding-plus-theory assessments, progression, review reminders, saved work, and an optional OpenAI teacher. Existing lessons and execution work without an API key. No cloud account or app backend. Practice generation has no curriculum-count limit, but API charges and a configurable per-launch request cap apply.
 
-## Status
+## Learning repertoire overhaul — approved roadmap, 2026-10-08
+
+### Delivery policy and branch dependencies
+
+The user approved starting the review proposal with documentation first, parallel implementation where file ownership is independent, and validation between phases. This is a staged overhaul, not one unreviewable change. The checklist below is the source of truth for the entire proposal; unchecked work is not delivered.
+
+- Current delivery branch: `feature/independent-practice`, created from freshly fetched `origin/develop` at `b0cf497` after verifying PR #6 (`feature/readable-checks`) is merged. Phase 1B is checkpoint `32e4992`; the merged tree matches it exactly. Phase 1A was checkpoint `9e5e9f5`. No uncommitted work was carried into the new branch, and the local develop branch was not rewritten.
+- Create a new type-prefixed branch for each subsequent delivery slice. Do not implement on or merge into `develop` during this work. The initial Phase 1A pass did not commit, push, replace the package, or restart the running app. In the follow-up, the user requested packaging, checkpoint/push, and a new Phase 1B branch; package replacement was explicitly confirmed. Checkpoint/push and the branch transition must complete before Phase 1B implementation.
+- Parallel workers own distinct files; one integration owner owns shared models, catalog contracts, docs, and cross-cutting validation. Independent review follows implementation.
+- Every slice records its exact tests, failures, skips, native rendering evidence, and unverified manual/live behavior before the next slice starts. Known baseline failures are not silently waived or hidden by weaker assertions.
+- Preserve saved drafts, activity/section IDs, assessment history, mastered chapters, existing effort ratings, and reward policy. New exercises receive new IDs. Do not retroactively revoke mastery or recalculate historical rewards.
+- Keep all additions offline-first, Python 3.9-compatible, standard-library-only, and within the existing fail-closed sandbox. No new package environment or network access is approved by this roadmap.
+
+### Baseline and review findings
+
+- [x] Review all foundation and advanced/data chapters, default exercises, prerequisites, assessment/review rules, runner, editor, generated practice, and project briefs.
+- [x] Focused baseline: `swift test --filter 'PythonTeacherCoreTests|MarkdownDocumentTests'` on the reviewed source: **191 passed, zero failures, zero skips**. References, starters, and standalone lesson blocks executed in the restricted runner. No live API or hands-on GUI claims.
+- [x] Fresh full-suite baseline before implementation: `swift test` at `18f3f73`, **264 tests; 257 passed, seven failed tests / 18 assertions; no skips**. All failures are the documented editor-height assertion at `AppModelTests.swift:2177`: assessment theory, expanded instructions, gamification minimum-size, native workspace modes, passing-solution effects, saved incomplete exercise, and window reward effects. Log: `shell-1cd730`. This is the comparison baseline, not a green full suite.
+- Findings: debugging guidance exists but is scattered; one reviewed repair task identifies its own defect; exactly three reviewed exercises per chapter restrict variety; early fixed-input checks provide limited transfer evidence; AI-generated projects are not an offline capstone bank. The prerequisite graph and executable curriculum checks are strengths to retain.
+- Review corrections: decision-boundary teaching is intentionally ordinary practice, not a missing troubleshooting role. `###` advice remains part of its parent section, not a broken role mapping. Do not promote headings or renumber sections merely for Debug-format generation. `sum`/`min`/`max`, `split`/`join`, aliasing, and default-argument guidance already exist at different points; improve placement and practice rather than claiming they are absent.
+
+### Phase 1A — debugging foundations (checkpoint `9e5e9f5`)
+
+Goal: learners can read a failure, navigate to their code, apply a repeatable investigation method, and practise diagnosis without an API key.
+
+- [x] Add bounded structured execution diagnostics: exception type/message, learner/check/runner origin, learner frames, syntax-error location, and original text fallback. Diagnostics are supplementary evidence, never a replacement for the completion/exit/assertion contract.
+- [x] Add a compact local failure card and explicit Go to line action. Keep original output available. Never navigate stale diagnostics into edited code or navigate check/harness lines into the learner editor. Clear transient diagnostics on navigation/reset/relaunch/setup failures.
+- [x] Add offline error-category guidance in Learn/Practice. Assessment receives neutral location/error data only, no new coaching, solution help, or access to grader internals. This does not approve interactive assessment debugging.
+- [x] Add two short learning units within existing headings: **Understanding errors** in basics, and **Debugging systematically** after function fundamentals. Use `###` subheadings so `#`/`##` section IDs remain unchanged. Teach syntax/runtime/logic failures, annotated traceback reading, expected-vs-observed behavior, a small reproduction, one hypothesis/change, and regression checks. Introduce each probe/tool before asking for it.
+- [x] Add **12 reviewed offline labs**: basics 2, values 2, decisions 2, loops 2, functions 2, collections 1, reliability 1. Mix diagnosis, prediction, boundaries, first divergence, missing/premature returns, data shape, and validation of later records. Preserve all existing exercises unchanged; later labs give symptoms/contracts rather than revealing the defect.
+- [x] Represent intentional starter failure types explicitly for reviewed syntax/runtime labs. Legacy/generated exercises without this metadata retain their existing contract. Replace the universal three-exercise test quota with minimum/content coverage checks; do not loosen reference correctness or prerequisite checks.
+- [x] Add regression tests for diagnostics, stale source, editor selection/undo/Unicode, no assessment coaching, legacy decoding, lab references/starters, plausible wrong repairs, taught syntax, and heading/ID stability.
+- [x] Validate focused suites, full `swift test`, native failure-card rendering at default/minimum sizes, and `git diff --check`; review source and record exact outcomes below. Full-suite failures match the measured baseline; this is not a green full suite. Hands-on usability is a separate outstanding check.
+
+### Phase 1B — readable checks and safe experiments (checkpoint `32e4992`, merged in PR #6)
+
+Implementation contract, recorded before source changes:
+- [x] Verify clean Phase 1A checkpoint `9e5e9f5` and create `feature/readable-checks`. The recorded 288-test Phase 1A result (seven known layout failures / 18 assertions) is this slice's baseline. No new commit/push, package replacement, running-app restart, or develop merge is part of this slice.
+- [x] Add optional Codable `Exercise.checkPlan` with declared inputs and authored named cases. First adoption is the four Phase 1A decision/loop labs; other practice and all assessment definitions retain their existing execution path. Preserve existing IDs, interfaces, effort, attempts and original testCode.
+- Named cases compare a single named result variable with an authored Python literal, with strict supported-value types and bounded safe display. Targets are identifiers, not arbitrary expressions; do not guess expectations from asserts, reevaluate learner calls, invoke custom repr/equality for display, or accept provider-authored check plans. Limits: 16 cases, 8 inputs, bounded names/literals/reports, and a total execution deadline.
+- Each case runs the same saved source in a fresh restricted process/workspace. Replace only unique declared top-level simple input assignments using parsed literal values, preserving source line locations. Missing, ambiguous or changed declarations fail closed with an actionable error rather than silently ignoring an override. No global injection that is subsequently overwritten by the input lines; no text replacement and no eval of scratch input.
+- Stop on the first failed/error case and mark remaining cases not reached. Named outcomes are diagnostic detail, not grading authority: completion requires the normal runner success/completion contract for every case AND the unchanged original assertion tests. Missing/malformed reports must not yield a passing named plan. Legacy behavior remains unchanged when the plan is absent.
+- Scratch experiments are an explicit Learn/Practice action for declared-input exercises. Values use bounded Python literal syntax; defaults/reset are visible. Runs use an isolated workspace and display selected result variables, but never record attempts, award XP, complete practice, or satisfy assessments. Saved code and draft selection remain untouched. Source and scratch-input changes invalidate navigation/freshness; teacher snapshots label experiment operation and exact input overrides instead of presenting it as a solution check.
+- Generated Debug practice remains logic-error-only: require a check-origin AssertionError from the combined starter/check run. Reject syntax errors, learner exceptions (including learner-owned assertions), missing diagnostics, infrastructure failure, timeout, cancellation, or already-passing starters. This stricter rule is local validation, not a provider schema change, and does not affect authored syntax/runtime labs or change other generation formats.
+- Parallel ownership: runner and runner tests; app model/views and app tests; four-lab plan metadata and content tests; generation prompt and dedicated validation tests. Integration owner controls shared types/helper APIs, docs, integration, and test execution. All builds/tests are coordinated to avoid concurrent SwiftPM writers.
+- [x] Gate: optional-field legacy decoding, literal/assignment validation, source lines, single-read/safe rendering, isolation/limits/cancellation, partial/not-reached outcomes, original-check authority, scratch non-grading/draft preservation, teacher context/freshness, assessment exclusion, mock Debug generation rejection, reference/incorrect-repair cases; full tests and Python 3.14 compatibility; native rendering and source review. Evidence below records the unchanged baseline layout failures; live API and hands-on GUI behavior remain unverified.
+
+- [x] Define authored named-check metadata with cases such as empty input/exact threshold, expected/actual values, and passed/failed/not-reached states. Start with reviewed checks; do not guess meaning from arbitrary assertions or evaluate operands twice.
+- [x] Keep early teaching syntax unchanged while enabling multiple app-owned input fixtures. Add a scratch-input/testing workflow that does not require altering and restoring fixed input lines, and cannot award completion from an experiment.
+- [x] Distinguish authored logic-error, runtime-error, and syntax-error activities. Tighten generated Debug validation to prove its declared failure category, not merely any non-timeout failure; use mocked requests and local execution, not paid calls.
+- [x] Verify checker semantics, input isolation, setup failures, fail-fast/dependent checks, raw-output fallback, and assessment disclosure boundaries. Prove plausible wrong solutions fail while equivalent correct solutions pass.
+
+### Phase 1B implementation evidence — 2026-10-08
+
+**Implemented on `feature/readable-checks`, based on user checkpoint `9e5e9f5`; initially left uncommitted. Subsequently committed/pushed by the user as `32e4992` and merged in PR #6 (`b0cf497`).** Two design investigations preceded four disjoint implementation workers and two independent read-only reviews (runner/model safety and app/generation behavior). The integration owner handled shared contracts, regression follow-ups, execution of all tests, and documentation. No commit, push, merge to develop, package replacement, live API call, personal-data migration, or running-app restart was performed in this slice.
+
+Delivered:
+- Optional app-authored plans and bounded named outcomes, preserving older exercise decoding and all existing activity IDs, starter/reference/test code, assessment definitions, effort and reward policy. Exactly four reviewed labs adopted plans; course totals remain 17 chapters / 63 practice / 17 assessments / 51 theory questions.
+- `PythonRunner.check` runs each named row in a fresh restricted process/workspace, then requires the original checks on the saved source. A shared eight-second budget bounds the whole plan. Missing/malformed/duplicate observation reports cannot imply success; failure stops later rows as not reached. Safe typed snapshots never invoke learner-defined representation/equality. Input substitution uses bounded literal parsing and AST locations, not code edits or global injection.
+- `PythonRunner.experiment` and the Scratch inputs sheet observe the same code with temporary literals and display result variables, without recording attempts, awarding XP/assistance, mutating drafts, or satisfying checks. Experiments are unavailable in assessments; normal Run and Check solution ignore the scratch fields. Fields and evidence are ephemeral and reset on navigation/restoration/relaunch.
+- Named-case cards show expected/actual/detail and a separate overall solution-check result. Source and input freshness guard diagnostic navigation. Teacher evidence carries exact overrides/defaults, experiment operation and no checksPassed claim; provider instructions explain the distinction.
+- Generated Debug practice now requires a positive failure exit and a checks-origin AssertionError. Syntax/runtime/learner-assert/setup/missing-evidence cases fail validation; reviewed error-repair labs and other generation styles retain their contracts. Provider schema is unchanged and provider-supplied app-owned metadata is ignored.
+
+| Adopted lab | Named rows | Input scenarios |
+| --- | ---: | ---: |
+| `decisions-debug-priority` | 5 | 5 |
+| `decisions-debug-entry-boundary` | 5 | 5 |
+| `loops-debug-running-total` | 8 | 4 |
+| `loops-predict-threshold` | 10 | 5 |
+
+The **28 named rows across 19 scenarios** separately check loop totals/traces or values/visited lists. Twelve plausible incorrect repairs that pass the old single-example checks are now rejected, including dropped approval, hardcoded minimum/status, alternate-input totals/traces, and float results where integers are required. Equivalent correct implementations remain accepted. Original prediction evidence is still required by unchanged original checks after all named cases pass.
+
+Verification and review follow-up:
+- Initial coordinated runner/curriculum/generation/compatibility selection: **79 passed, zero failures** (`shell-735f8d`). App state/teacher context/rendering/provider-metadata selection: **16 passed, zero failures** (`shell-a45eb8`). No live provider requests were used.
+- Reproduced and fixed a non-UI API routing edge: `runCode(submit: true)` in Practice could bypass named cases; all non-assessment grading flag combinations now use `runner.check`. The regression proves no false completion or XP. Tightened setup-sentinel rejection, unsuccessful-experiment context wording, and common provider instructions with failing-then-passing regressions. The follow-up selection passed **5/5** (`shell-b710c5`).
+- Full `swift test`: **343 tests; 336 passed, seven failed tests / 18 assertions, zero skips** (`shell-48b80a`). All **227 core tests**, **9 Markdown tests**, **10 dedicated generated-Debug app tests**, and **55 newly added tests** passed. The seven failures and numeric assertions are identical to the Phase 1A editor-height baseline (now at `AppModelTests.swift:3001` during that run); no geometry assertions were weakened.
+- `PYTHON_TEACHER_TEST_PYTHON=/opt/homebrew/bin/python3 swift test --filter 'CurriculumTests|CurriculumGraphTests|PythonRunnerTests'`, Python **3.14.3**: **137 passed, zero failures, zero skips** (`shell-604b37`). Default executable curriculum/runner tests use Python **3.9.6**. Both runs exercise authored plans and wrong-repair cases in the restricted runner.
+- Extended the existing native test to capture an actual original-check failure after all named cases passed, then reran both Phase 1B rendering tests: **2/2 passed** (`shell-9490ac`). Snapshots are in `/tmp/python-teacher-phase1b-snapshots` (named rows, scratch sheet, actual experiments and stale results, assessment exclusion, and actual overall failure at default/minimum sizes). Representative images were visually inspected, including both overall-failure sizes. Tests confirm unchanged editor dimensions; output details remain scrollable at minimum size. This is native rendering/evidence inspection, not physical keyboard, sheet interaction or VoiceOver acceptance.
+- `swift build -c release`: passed (`shell-501dc9`). `git diff --check`: passed. Final status remains on `feature/readable-checks` with implementation/docs/test changes uncommitted; two new dedicated test files are untracked until staging. The packaged app was not replaced or restarted.
+
+Remaining limitations / next slice:
+- Only these four labs currently have plans and scratch inputs. Extending coverage to other reviewed tasks and independent projects belongs to Phase 2; existing fixed-input limitations elsewhere remain documented. No assessment bank, milestones, expanded review scheduler, replay or live debugger is claimed delivered.
+- Structural validation in Swift does not parse Python; restricted Python accepts bounded None/bool/int/finite-float/str/bytes/list/tuple/dict values and rejects unsupported/custom/deep/cyclic/oversized values. Dictionary displays are normalized for order-insensitive comparison. Keep original input assignments as supplied; arbitrary declaration rewrites are not supported.
+- Named execution is for ordinary personal learning, not tamper-resistant hostile grading. Reports originate in the learner process; deliberate process introspection or local progress-file tampering is outside the existing app threat model. No sandbox restrictions were relaxed. Do not generalize fixture execution to module-introspection/multi-file semantics without separate tests. The shared deadline includes process startup, so larger future plans need performance validation rather than unbounded time budgets.
+- Baseline native-layout failures, hands-on packaged-app testing and live model adherence remain outstanding. The packaged app remains the Phase 1A build the user requested for testing. Phase 2 starts on a new branch only after preserving this checkpoint.
+
+### Phase 2 — independent problem solving and assessment evidence
+
+Delivery slices (all preserve separate validation/checkpoint boundaries):
+- **2A — independent practice repertoire (current branch `feature/independent-practice`):** app-authored practice forms, scaffolding/skills/reflection metadata, nine additive exercises, and short planning/refactoring/documentation teaching units. Does not change assessment gates or review schedules.
+- **2B — reviewed offline projects:** four brief-based projects with separately checkable milestones plus an integration check; checkpoint identities and duplicate-XP protections verified before assessment changes.
+- **2C — assessment evidence:** authored assessment/question banks, fresh variants and structured reflection prompts with version-specific saved work, historical mastery preserved, and no AI grading or assistance.
+- **2D — targeted retrieval:** activity-specific review queues, expanding intervals, and concrete deep links, using saved evidence without punitive streaks or mutable reward counters.
+
+#### Phase 2A contract (recorded before implementation)
+
+- [x] Verify user commit/push `32e4992`, merged PR #6, clean tree, and fetched `origin/develop` `b0cf497`; create the new branch from that merged base. Refresh the full-suite baseline while implementation ownership is assigned.
+- [x] Add optional Codable `Exercise.practiceProfile`: form (write/complete/predict/debug/counterexample/transfer/refactor/maintenance/project), scaffolding (guided/light/independent), taught section IDs, and 1–3 reflection prompts. Profiles are app-owned teaching descriptors, not claims of independent completion or mastery; absent metadata remains absent on old saved/generated/legacy work. No provider schema or reward-policy change.
+- [x] Classify all 63 existing current reviewed exercises in an explicit app-owned catalog without changing their IDs, instructions, code, hints, checks, effort, or ordering. Skills must resolve to taught, non-overview lesson sections in the chapter's prerequisite closure or current chapter. Do not infer metadata from provider claims or arbitrary title/code heuristics.
+- [x] Append nine new reviewed exercises with exact new IDs: `basics-transfer-delivery-note`, `values-transfer-workshop-cost`, `decisions-transfer-library-entry`, `loops-transfer-water-log`, `functions-transfer-ticket-total`, `functions-refactor-batch-cost`, `collections-transfer-stock-report`, `collections-maintenance-label-counts`, `reliability-transfer-gradebook`. One transfer per foundation chapter; extra refactoring/maintenance at functions/collections. Do not replace any prior draft interface or completion identity.
+- [x] Use precise contracts/examples but progressively fewer algorithmic instructions. Three graduated hints remain available. New script-level transfers in basics/values/decisions/loops receive bounded named input plans so generalization is tested without requiring untaught functions. Later function tasks use multiple direct calls, boundaries, repeated calls and input-preservation tests. Keep source Python 3.9-compatible and standard-library-only.
+- [x] Teach problem decomposition, meaningful names, behavior-preserving refactoring, reading a function contract/docstring, and useful comments/docstrings through short `###` additions inside existing foundation headings. Keep every existing `#`/`##` heading and section role/ID stable. Examples run standalone; metadata and prose are not automatically scored as understanding.
+- [x] Show practice form/scaffolding plus an expandable taught-skills/reflection guide in the native workspace; use the existing reflection storage unchanged. Keep exercise-picker IDs/order/selection/drafts stable. No filtering/auto-navigation that loses the selected draft, no new assistance charges, no profile UI or new reflection rules in assessment mode. Preserve the code editor's geometry and reading preferences.
+- [x] Verify optional-field decoding, provider metadata exclusion, all current profile references, separate coverage for the original 3+12 foundation activities and the nine new activities, starter/reference execution, likely wrong solutions and equivalent correct solutions, draft/reflection/history isolation, native rendering, and unchanged assessment/reward policy. Never weaken the existing Phase 1A compatibility assertions merely to allow appended work.
+- [x] Gate: coordinated focused tests, full `swift test` compared with the 343-test baseline (seven known layout failures / 18 assertions), Python 3.14 compatibility, representative native screenshots and independent content/code review. Manual/live behavior remains separately outstanding; no commit, push, package replacement, app restart or develop merge is included in this slice.
+
+#### Phase 2A implementation evidence — 2026-10-08
+
+**Implemented and validated on `feature/independent-practice` from merged develop `b0cf497`; changes remain uncommitted.** One compatibility/design investigation preceded five disjoint implementation workers (catalog, native guide, early transfers, functions, records) and two independent read-only reviews. The integration owner handled shared types, persistence/provider exclusions, immutable-prefix tests, documentation and coordinated verification.
+
+Delivered:
+- Profiles for all **72 current reviewed practice activities**: explicit classification of the original 63 plus inline descriptors for nine additions. The 63-task catalog has 34 write / 16 complete / 10 debug / 2 predict / 1 counterexample; additions are 7 transfer / 1 refactor / 1 maintenance. Scaffolding describes task design, never assistance use, independent completion, mastery or XP.
+- Native compact form/scaffolding labels and a collapsible **Skills and reflection** guide in Practice. Skills resolve only to taught, non-overview sections in the current/prerequisite closure. Troubleshooting sections can support prediction, refactoring and maintenance too; their Debug-only restriction remains specific to generation coverage. Reflection storage/requirements are unchanged. Generated/legacy/assessment guides remain absent, and optional teacher snapshots carry only resolved reviewed descriptors on explicit requests.
+- The original 63 activities, assessments, heading/section IDs, reward ratings and saved-work contracts are unchanged. Compatibility tests preserve the exact original 3+12 foundation prefix separately from the new trailing activities; old JSON without profiles still decodes, while unreadable future profile values preserve the saved file. Provider output cannot supply app-owned profiles.
+- Four new early transfers add **32 named rows**, so there are now **60 rows across eight reviewed activities** using named plans and scratch inputs. New function/record tasks test varied calls, boundaries, repeated calls, unchanged inputs and likely incorrect solutions. All starters run standalone and fail checks with AssertionError; all references pass. Equivalent correct approaches are accepted.
+- Short `###` units inside unchanged headings teach decomposition, meaningful names, refactoring, signatures/docstrings, why-focused comments and maintaining old behavior after a requirement change. The refactor checker verifies real helper calls/returned-value use rather than code length; documentation checking is explicitly presence-only, not a claim that explanation quality was graded.
+
+| New activity | Form | Reviewed workload units |
+| --- | --- | ---: |
+| `basics-transfer-delivery-note` | transfer | 1 |
+| `values-transfer-workshop-cost` | transfer | 2 |
+| `decisions-transfer-library-entry` | transfer | 1 |
+| `loops-transfer-water-log` | transfer | 2 |
+| `functions-transfer-ticket-total` | transfer | 2 |
+| `functions-refactor-batch-cost` | refactor | 2 |
+| `collections-transfer-stock-report` | transfer | 2 |
+| `collections-maintenance-label-counts` | maintenance | 1 |
+| `reliability-transfer-gradebook` | transfer | 3 |
+
+All nine have Similar difficulty, totaling **1,600 available first-completion XP**. No historical XP, policy version, chapter prerequisite, assessment gate, or review schedule changed. Course totals are **17 chapters / 72 reviewed practice / 17 coding assessments / 51 theory questions**.
+
+Verification:
+- Refreshed full baseline on the merged, unchanged tree: **343 tests; 336 passed, seven failed tests / 18 assertions, zero skips** (`shell-4ae948`), exactly matching the prior Phase 1B result.
+- Focused curriculum/profile/compatibility/provider run: **53/53 passed** (`shell-0ff808`). Eight new app guide/draft/reflection/teacher/rendering tests: **8/8 passed** (`shell-9e8362`). Independent reviews found no blocking defects; an apparent type-equality concern was checked against the runner's existing type-tagged snapshots and strict-type regressions, not used to weaken checks.
+- Full `swift test`: **388 tests; 381 passed, seven failed tests / 18 assertions, zero skips** (`shell-f6f74c`). All **264 core tests**, **9 Markdown tests**, **10 generated-Debug app tests**, and **45 newly added tests** passed. The only failures are the same editor-height cases with identical numeric assertions as baseline, now at `AppModelTests.swift:3349`; no geometry assertions were relaxed.
+- `PYTHON_TEACHER_TEST_PYTHON=/opt/homebrew/bin/python3 swift test --filter 'CurriculumTests|CurriculumGraphTests|PracticeProfileTests'`, Python **3.14.3**: **115/115 passed, zero skips** (`shell-31eb90`). Default curriculum execution used Python **3.9.6**. This verifies all runnable lesson blocks, reviewed starter/reference contracts, named transfers, helper-reuse checks, record validation, profile links and alternate correct/incorrect implementations in the restricted runner.
+- Native captures in `/tmp/python-teacher-phase2a-snapshots` compare unprofiled, collapsed and expanded guides for guided/transfer/refactor/maintenance activities at 1380×900 and 1080×740. Representative images at both sizes were visually inspected; the native test confirms unchanged editor geometry. Expanded guides use the existing left-panel scroll. These are synthetic native renders, not hands-on keyboard/VoiceOver or packaged-app acceptance.
+- `swift build -c release`: passed (`shell-2dcf34`). `git diff --check`: passed. No commit, push, merge, package replacement, real API request, personal-data migration or app restart was performed. Four new dedicated test files remain untracked until staging.
+
+Next checkpoints / still pending:
+- **2B:** reviewed offline projects with separately checkable milestones and a final integration result, preserving no-duplicate-XP rules.
+- **2C:** assessment/question banks, version-specific saved work, and assessment reflection guidance without AI or text heuristics deciding mastery.
+- **2D:** specific retrieval activities, expanding intervals and review deep links. Current seven-day chapter review is unchanged.
+- Broader mutation coverage for older single-input activities remains part of 2B/2C. The new profile labels alone are not proof of skill mastery, nor a new per-skill progress model. Baseline layout failures, manual acceptance, live provider quality and package-environment approval remain outstanding.
+
+#### Phase 2 master checklist
+
+- [x] Phase 2A: replace a fixed exercise quota with authored skill/form coverage: predict, complete, write, diagnose, counterexample, transfer. Keep short tasks short; avoid requiring every form in every chapter.
+- [x] Phase 2A: add progressively less scaffolded foundation activities while preserving precise input/output contracts, exact examples, and beginner explanations. Later integrated projects continue this progression in 2B.
+- [x] Phase 2A: add problem decomposition, naming, refactoring without behavior changes, documentation literacy, useful comments/docstrings, and maintenance/change-request exercises.
+- [ ] Add reviewed offline milestone projects based on existing briefs: foundation gradebook; CSV cleanup/report with rejected-row reasons; class-based library/ledger with regression tests; two-table report with join validation and interpretation. Recognize the existing reliability assessment as a small integrated task, not a missing feature.
+- [ ] Introduce separately checkable milestones plus an integration check; prevent repeated milestone checks from duplicating completion XP.
+- [ ] Add assessment/question banks and fresh authored variants that measure transfer without withholding helpful feedback. Before functions, use supported input fixtures rather than requiring untaught function syntax.
+- [ ] Use structured reflection prompts without claiming that word counts, keywords, or AI judgments measure mastery. Preserve independent assessment rules and historical passes.
+- [ ] Mutation-test reviewed checkers with likely mistakes: hardcoded results where generalization is required, off-by-one boundaries, premature return, ignored later data, and input mutation.
+- [ ] Improve review scheduling from a single chapter-level seven-day reminder toward specific skill/activity retrieval with expanding intervals and concrete deep links. Keep effort rewards distinct from mastery and avoid punitive streaks.
+- [ ] Gate: curriculum/graph/markdown/progress tests; compatibility fixtures; project milestone and assessment isolation tests; representative native screenshots and a documented manual learning walkthrough.
+
+### Phase 3 — execution visualization
+
+- [ ] Spike restricted-runner tracing before committing to an implementation. Preserve isolation and resource limits; no networking or unrestricted subprocess fallback.
+- [ ] Add bounded recorded execution replay for Learn/Practice: highlighted source, safe variable snapshots/differences, call context, next/previous recorded step, and loop navigation. Backward inspection does not reverse side effects.
+- [ ] Bound event count, bytes, nesting, cyclic values, and running time; avoid invoking learner-defined representation/property code for inspection; preserve useful partial evidence on limits and cancellation.
+- [ ] Never trace grader internals; label source freshness and keep trace sessions distinct from completion checks. Explicitly decide assessment availability before adding any assessment affordance.
+- [ ] Gate: sandbox spike, tracing semantic-equivalence tests, timeout/flood/cancellation cases, Unicode/source navigation, accessibility and native rendering, manual trace walkthrough.
+- [ ] Evaluate live breakpoints and step into/over/out only after replay usability evidence. Persistent command channels and paused-time budgets require their own design/validation slice. Arbitrary expression evaluation, variable mutation, remote debugging, and a full IDE remain out of initial scope.
+
+### Phase 4 — repertoire and path refinements
+
+- [ ] Consolidate names/scope/mutation practice: rebinding vs mutation, aliasing, shallow/nested copies, mutable defaults. Move common text processing earlier after lists; cover split/join, replacement, prefix/suffix tests, and structured parsing.
+- [ ] Strengthen early lightweight test design after functions while retaining later class-based unittest. Separate basic type hints from functions-as-values/closures/decorators/caching; evaluate smaller units for files/modules/dates and statistics/sampling without breaking old IDs or mastery gates.
+- [ ] Add practical scripts/modules, supplied-argument argparse exercises, logging, and an explicit bridge to running exported code outside the app. Multi-file work needs a separately tested workspace/import contract. Track Git and environment literacy as part of this bridge, without granting learner subprocess access.
+- [ ] Strengthen data interpretation: sampling bias, leakage, missing-data policy, duplicate join keys, reproducibility, and reporting limitations. Add late-track project objectives for testing, generators, decorators, statistics, and aggregation rather than relying only on early briefs.
+- [ ] Teach simple algorithmic reasoning and measurement: list vs set lookup, repeated work, cost intuition, and profiling/timing before optimizing.
+- [ ] Run a content-precision pass, including hashability vs immutability and tuples containing unhashable members.
+- [ ] Later optional extensions: recursion, regular expressions, SQLite (sandbox/interpreter probe first), richer data structures. HTTP/API and LLM-evaluation teaching remain a later scoped proposal; do not quietly enable network access.
+- [ ] Gate each content slice with prerequisites, standalone examples, checker mutation cases, Python 3.9 compatibility, stable saved-work fixtures, and offline availability.
+
+### Separate approval / manual gates
+
+- [ ] Managed hash-pinned NumPy/pandas/matplotlib environment and image output: retain the existing separate security-model approval requirement (original curriculum phases 6–7 below). Then implement numpy/pandas/groupby/plotting content and visualization literacy.
+- [ ] Hands-on packaged-app learning/debugging walkthrough, keyboard and VoiceOver behavior, and readability at minimum window size. Native test renders alone do not close this gate.
+- [ ] Live provider generation/teaching quality: optional explicit live validation, never inferred from mocks. Core curriculum/debugging must remain useful without it.
+
+### Phase 1A implementation evidence
+
+**Implemented and automated/native-render validated on `feature/debugging-foundations`, 2026-10-08. Manual packaged-app acceptance remains pending.** Four implementation workers owned runner, UI, early content, and later content; two independent read-only reviewers checked diagnostics/UI and all new curriculum material. Shared model/tests/docs and integration stayed with the integration owner. No commits, pushes, merges, personal-progress changes, package replacement, or running-app restart were performed.
+
+Delivered:
+- `RunDiagnostic` adds bounded exception metadata to `RunResult`; a nonce-framed JSON payload is parsed separately from the 64 KiB raw-output limit. Payloads are capped at 16 KiB, 32 learner frames, and bounded names/messages. Success, timeout and cancellation do not invent error diagnostics. Check diagnostics do not expose checker source/locals, and supplementary data never controls grading. Sandbox permissions, completion authority, and assertion-site enforcement are unchanged.
+- Native failure cards distinguish learner/check/runner errors and retain the original output. Fresh learner locations can select/scroll the code without modifying text or undo. Source/draft identity, bounds and IME composition guard navigation. Re-clicking creates a fresh request; rejected composition-time requests do not jump later unexpectedly. Assessment cards omit coaching and diagnostic messages, retaining neutral type/location data.
+- The two teaching units and twelve appended labs bring reviewed practice from **51 to 63**, while chapters/assessments/theory questions remain **17/17/51**. Existing `#`/`##` headings, original activity contracts, prerequisites and assessments remain unchanged. Optional `expectedStarterError` metadata permits the reviewed syntax/key-error starters without weakening other starter checks or legacy decoding. New authored lab awards total **1,600 available first-completion XP**; historical rewards and policy remain unchanged.
+
+| Chapter | Added lab IDs |
+| --- | --- |
+| basics | `basics-debug-quote`, `basics-debug-saved-total` |
+| values | `values-debug-clean-label`, `values-predict-token-total` |
+| decisions | `decisions-debug-priority`, `decisions-debug-entry-boundary` |
+| loops | `loops-debug-running-total`, `loops-predict-threshold` |
+| functions | `functions-debug-return`, `functions-predict-counterexample` |
+| collections | `collections-debug-optional-field` |
+| reliability | `reliability-debug-later-record` |
+
+Verification:
+- Initial focused run: **71 tests, one failure** in the new mutation test's expected exception category. The checker correctly rejected a two-record-only validation repair with `TypeError`; the regression now explicitly expects that error rather than weakening the exercise checker. All eight new native UI tests and 39 then-current runner tests passed in that run.
+- Reproduced a lone-CR location bug with a failing test, fixed universal-newline counting (LF/CRLF/CR), and verified the regression passed. Independently reviewed and reproduced overbroad path redaction obscuring the division operator; narrowed redaction and verified that useful operator/relative text survives while absolute path tokens are redacted. Raw tracebacks remain unchanged. The final integrated run includes both regressions.
+- Full `swift test`, with synthetic native screenshots enabled: **288 tests; 281 passed, seven failed tests / 18 assertions, zero skips** (`shell-194e87`). All **198 core tests**, all **9 Markdown tests**, and all **24 newly added tests** passed. The failures are exactly the same seven editor-height tests with the same numeric assertions as baseline, now at `AppModelTests.swift:2489`. Existing geometry assertions were not relaxed.
+- Python 3.9.6 was used by the default curriculum/runner tests. Alternate compatibility command: `PYTHON_TEACHER_TEST_PYTHON=/opt/homebrew/bin/python3 swift test --filter 'CurriculumTests|CurriculumGraphTests|PythonRunnerTests'`, Python **3.14.3**: **111 passed, zero failures, zero skips** (`shell-5feff6`). All current lesson examples and reviewed references/starters pass their respective executable contracts, including the intentional SyntaxError line-2 case.
+- Regenerated the failure-card rendering test in a user-approved temporary directory after ignore rules prevented image reads under `.build`: **one test passed** (`shell-b3952c`). Visually inspected all eight PNGs in `/tmp/python-teacher-phase1a-snapshots`: Learn/Practice/Assessment at 1380×900 and 1080×740, plus stale Practice at both sizes. Cards and stale/assessment states are readable; the raw output may require scrolling at minimum size. The automated comparison confirms unchanged editor dimensions. These are synthetic native renders, not hands-on packaged-app interaction.
+- `swift build -c release`: passed (`shell-9a5928`); the packaged app was not replaced or relaunched. `git diff --check`: passed.
+
+Follow-up packaging / checkpoint request:
+- [x] After explicit confirmation to replace `dist/Python Teacher.app`, ran `bash scripts/package-app.sh`: release build, arm64 app packaging, and ad-hoc signature verification passed (`shell-926a0d`). Independent `codesign --verify --deep --strict --verbose=2 "dist/Python Teacher.app"` also passed. The app was not launched or restarted; manual testing is for the user.
+- [x] The user committed and pushed Phase 1A as `9e5e9f5`. Verified a clean working tree and matching local/origin tracking refs for `feature/debugging-foundations` before continuing.
+- [x] Create `feature/readable-checks` from that preserved checkpoint without carrying uncommitted Phase 1A changes. Phase 1B implementation is tracked above.
+
+Remaining / next checkpoint:
+- **Phase 1B is implemented and validated on `feature/readable-checks`.** Its contract and evidence are recorded above. Phases 2–4 remain explicitly unchecked.
+- At the Phase 1A checkpoint, fixed-input decisions labs accepted some partial repairs (for example, dropping approval when the supplied approval was true). Phase 1B now rejects these on the four adopted decision/loop labs with multi-input plans and checker mutations; broader coverage remains Phase 2 work.
+- Known editor-layout baseline failures, manual keyboard/VoiceOver/packaged-app acceptance, live provider behavior, and the separately approved package-environment work remain outstanding. No live API request or real learning-data migration was used for verification.
+
+## Status (earlier delivered revisions)
 
 **Latest integrated verification — 2026-10-05:** Full `swift test` after the saved-draft compatibility fix: **226 tests, 219 passed**; the same seven documented editor-layout tests failed with 18 assertions. All **156 core tests** passed. Curriculum suite with Homebrew Python 3.14: **47 passed, zero failures**. No live API or hands-on packaged-app verification was performed. Release packaging/signature evidence is recorded below.
 

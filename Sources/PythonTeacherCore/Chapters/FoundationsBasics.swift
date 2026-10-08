@@ -166,6 +166,72 @@ extension Curriculum {
         - `SyntaxError`: this often means missing quotes or punctuation.
 
         > **Note:** Practice hints explain the next idea. The chapter assessment is independent work without hints or solutions.
+
+        ### Understanding errors: three kinds of failure
+
+        - A **syntax error** means Python cannot read the program's grammar. A missing closing quote can cause `SyntaxError`; the program does not begin running.
+        - A **runtime error** happens while readable code runs. For example, using an unsaved name causes `NameError` and stops that run.
+        - A **wrong result** means the code runs but does not meet its goal. A failed exercise check may report `AssertionError`: a checked requirement was not met. This does not necessarily mean Python could not run your code.
+
+        This intentionally broken line is shown as text, not as a runnable example:
+
+        ```text
+        message = "Welcome
+        ```
+
+        Quotes must mark both ends of a string. An error's wording can differ between Python versions, so use the category, location, and your source together.
+
+        ### Understanding errors: read the traceback
+
+        A **traceback** describes where a runtime error surfaced. Consider this intentionally broken two-line program:
+
+        ```text
+        apples = 3
+        total = apples + pears
+        ```
+
+        A shortened error report might look like this:
+
+        ```text
+        Traceback (most recent call last):
+          File "learner.py", line 2, in <module>
+            total = apples + pears
+        NameError: name 'pears' is not defined
+        ```
+
+        1. Read the last line first: `NameError` is the category; the message names `pears`.
+        2. `line 2` identifies where the missing name was used. `<module>` here means the program's top-level instructions.
+        3. Inspect that line and the earlier assignments. The line number marks where the symptom surfaced, not necessarily where the mistake began: perhaps an earlier name was misspelled or never saved.
+
+        Syntax errors instead point to a source line, sometimes with a caret (`^`) near where reading failed. Look nearby too. A location in the app's checks is not a line to edit in your program; compare your saved results with the exercise contract.
+
+        ### Understanding errors: investigate one change at a time
+
+        1. State the **expected** value or behavior from the task.
+        2. Reproduce the **observed** behavior with a small run and unchanged inputs.
+        3. Read the error category and location, or print saved values if the result is wrong.
+        4. Make one **hypothesis**: a specific explanation you can test.
+        5. Change one thing that would test that explanation.
+        6. Run again, then check the solution. Recheck any earlier working example so the repair has not broken it.
+
+        Printing between assignments helps locate when a value changes:
+
+        ```python
+        tickets = 4
+        total = tickets + 2
+        print("After calculation:", total)
+        total = 0
+        print("At the end:", total)
+        ```
+
+        ```text
+        After calculation: 6
+        At the end: 0
+        ```
+
+        Both lines run successfully, but the last assignment replaces the earlier total. Compare the first point where observed values differ from your expectation rather than guessing at the final line.
+
+        > **Key idea:** Errors are evidence, not punishment. A failed practice check does not undo what you have learned. Inspect, revise, and try again.
         """,
         exercises: [
             exercise("basics-name", "Save a learner name", """
@@ -237,7 +303,103 @@ extension Curriculum {
                      "greeting = 'Hello'\nlearner = 'Mira'\nmessage = ''\n",
                      "greeting = 'Hello'\nlearner = 'Mira'\nmessage = greeting + ' ' + learner\n",
                      "assert greeting == 'Hello' and learner == 'Mira'\nassert type(message) is str\nassert message == 'Hello Mira'\n",
-                     ["The `+` operator joins strings without adding any spaces of its own.", "A single space inside matching quotes, `' '`, is a string you can join between the inputs.", "Save the joined text in `message`; a `print` call only displays it."])
+                     ["The `+` operator joins strings without adding any spaces of its own.", "A single space inside matching quotes, `' '`, is a string you can join between the inputs.", "Save the joined text in `message`; a `print` call only displays it."]),
+            exercise("basics-debug-quote", "Debug: a greeting will not run", """
+                     Goal:
+                     Repair a greeting program that stops with `SyntaxError` before it can display a message.
+
+                     Starting code:
+                     - `learner = 'Mira'` is an input. Keep it unchanged.
+                     - The remaining lines are an attempted greeting, not placeholders. They currently cannot run.
+
+                     Your task:
+                     1. Run the starter and read the error category and source location.
+                     2. Repair the program so `greeting` saves the text `'Hello'` and `message` joins it with one space and `learner`.
+                     3. Keep the result names and display `message` with the existing print line.
+
+                     Expected result:
+                     - `greeting` is `'Hello'` and `message` is exactly `'Hello Mira'`.
+                     - The program displays `Hello Mira` without an error.
+
+                     Check:
+                     Choose **Check solution** after repairing the source. It checks the unchanged input and saved text, not just the displayed output.
+                     """,
+                     "learner = 'Mira'\ngreeting = 'Hello\nmessage = greeting + ' ' + learner\nprint(message)\n",
+                     "learner = 'Mira'\ngreeting = 'Hello'\nmessage = greeting + ' ' + learner\nprint(message)\n",
+                     "assert learner == 'Mira'\nassert greeting == 'Hello'\nassert message == 'Hello Mira'\n",
+                     ["A syntax error happens before the program runs. Start at the indicated source line rather than changing the desired message.", "Compare the punctuation on the two text assignments. Each string needs a clear beginning and end.", "The `greeting` string starts with a single quote. Add the matching closing quote after `Hello`, keeping the text and the joining expression unchanged."],
+                     effort: .init(difficulty: .easier, scopeUnits: 1), expectedStarterError: "SyntaxError"),
+            exercise("basics-debug-saved-total", "Debug: the total disappears", """
+                     Goal:
+                     Repair a program that runs but displays `0` instead of the number of seats available.
+
+                     Starting code:
+                     - `front_seats = 4` and `back_seats = 3` are inputs. Keep them unchanged.
+                     - The program attempts to save and display `total_seats`.
+
+                     Your task:
+                     1. Trace the saved value of `total_seats` from top to bottom. You may add print lines between assignments.
+                     2. Repair the code so the final `total_seats` is calculated from both seat counts.
+                     3. Keep the final print line. Do not replace the calculation with a fixed answer.
+
+                     Expected result:
+                     - `total_seats` is the integer `7`, and the final line displays `7`.
+
+                     Check:
+                     Choose **Check solution**. It checks the inputs and the final saved total for this example. A printed intermediate answer alone is not enough.
+                     """,
+                     "front_seats = 4\nback_seats = 3\ntotal_seats = front_seats + back_seats\ntotal_seats = 0\nprint(total_seats)\n",
+                     "front_seats = 4\nback_seats = 3\ntotal_seats = front_seats + back_seats\nprint(total_seats)\n",
+                     "assert front_seats == 4 and back_seats == 3\nassert type(total_seats) is int and total_seats == 7\n",
+                     ["Successful execution does not guarantee the right result. Compare the saved total after each assignment with your expected total.", "An assignment replaces the value already held by that name. Which assignment runs last for `total_seats`?", "Keep the calculation using both inputs, and remove the later assignment that saves zero before the final print."],
+                     effort: .init(difficulty: .easier, scopeUnits: 1)),
+            exercise("basics-transfer-delivery-note", "Plan a delivery note", """
+                     Goal:
+                     Prepare an item count and a text note for an invented delivery. Choose how to combine the names, arithmetic, and text joining you have learned.
+
+                     Starting code:
+                     - Keep the supplied input lines unchanged: `boxes = 3`, `items_per_box = 4`, `loose_items = 2`, `destination = 'Studio'`, and `item_name = 'blankets'`.
+                     - Counts are nonnegative integers; the two text inputs are strings, which may be empty. No invalid inputs need handling.
+                     - Replace the `total_items = 0` and `delivery_note = ''` placeholders. You may add other meaningful names.
+
+                     Your task:
+                     1. Save the integer number of items across all full boxes and loose items in `total_items`.
+                     2. Save `delivery_note` as the destination followed by `': '` and the item name, with no other characters. Keep the count separate from this string.
+
+                     Expected result:
+                     - The supplied inputs give `total_items` equal to `14` and `delivery_note` equal to `'Studio: blankets'`.
+                     - Two boxes of five items with one loose item give `11`; destination `'Hall'` and item name `'cups'` give `'Hall: cups'`.
+                     - With no boxes and no loose items the count is `0`. Empty text still keeps the separator: two empty strings give `': '`.
+
+                     Check:
+                     Choose **Check solution**. Fresh named cases check changed counts, zero boxes, loose items alone, and changed or empty text; the original example must pass too. Results must be saved, not only printed. A failed case leaves later cases not reached.
+
+                     To explore without changing your draft, awarding XP, or completing the exercise, enter a Python literal (a value written directly, such as `2` or `'Hall'`) in an Experiment field and choose **Run experiment**. Keep the supplied input lines unchanged for checking.
+                     """,
+                     "boxes = 3\nitems_per_box = 4\nloose_items = 2\ndestination = 'Studio'\nitem_name = 'blankets'\ntotal_items = 0\ndelivery_note = ''\n",
+                     "boxes = 3\nitems_per_box = 4\nloose_items = 2\ndestination = 'Studio'\nitem_name = 'blankets'\ntotal_items = boxes * items_per_box + loose_items\ndelivery_note = destination + ': ' + item_name\n",
+                     "assert boxes == 3 and items_per_box == 4 and loose_items == 2\nassert destination == 'Studio' and item_name == 'blankets'\nassert type(total_items) is int and total_items == 14\nassert type(delivery_note) is str and delivery_note == 'Studio: blankets'\n",
+                     ["Separate the two requested results: which inputs describe quantities, and which describe the note?", "Every box contributes the same number of items. Loose items are additional, not another box. Text joining adds no punctuation of its own.", "Calculate `boxes * items_per_box + loose_items`. Join `destination`, `': '`, and `item_name` for the note; both results should use the inputs rather than fixed answers."],
+                     effort: .init(difficulty: .similar, scopeUnits: 1),
+                     checkPlan: .init(inputs: [
+                        .init(name: "boxes", defaultLiteral: "3"),
+                        .init(name: "items_per_box", defaultLiteral: "4"),
+                        .init(name: "loose_items", defaultLiteral: "2"),
+                        .init(name: "destination", defaultLiteral: "'Studio'"),
+                        .init(name: "item_name", defaultLiteral: "'blankets'")
+                     ], checks: [
+                        .init(id: "original-count", title: "Original delivery: item count", target: "total_items", expectedLiteral: "14"),
+                        .init(id: "original-note", title: "Original delivery: note", target: "delivery_note", expectedLiteral: "'Studio: blankets'"),
+                        .init(id: "changed-count", title: "Two boxes of five plus one loose item", inputs: ["boxes": "2", "items_per_box": "5", "loose_items": "1"], target: "total_items", expectedLiteral: "11"),
+                        .init(id: "changed-note", title: "Cups for the hall", inputs: ["destination": "'Hall'", "item_name": "'cups'"], target: "delivery_note", expectedLiteral: "'Hall: cups'"),
+                        .init(id: "zero-count", title: "No boxes or loose items", inputs: ["boxes": "0", "loose_items": "0"], target: "total_items", expectedLiteral: "0"),
+                        .init(id: "loose-only", title: "No boxes but five loose items", inputs: ["boxes": "0", "loose_items": "5"], target: "total_items", expectedLiteral: "5"),
+                        .init(id: "empty-note", title: "Empty text keeps its separator", inputs: ["destination": "''", "item_name": "''"], target: "delivery_note", expectedLiteral: "': '"),
+                        .init(id: "empty-destination", title: "An empty destination keeps the item name", inputs: ["destination": "''"], target: "delivery_note", expectedLiteral: "': blankets'")
+                     ]),
+                     practiceProfile: .init(form: .transfer, scaffolding: .independent,
+                                            skillIDs: ["basics-section-2", "basics-section-3", "basics-section-4"],
+                                            reflectionPrompts: ["Which inputs belong to each result?", "Why does zero boxes still allow a nonzero item count?"]))
         ],
         assessment: exercise("basics-assessment", "Prepare a simple picnic note", """
                              Goal:

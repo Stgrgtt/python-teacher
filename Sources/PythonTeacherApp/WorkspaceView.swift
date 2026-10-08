@@ -16,14 +16,17 @@ struct WorkspaceView: View {
     @State private var confirmGenerationRepair = false
     @State private var lessonParts: [String: Int] = [:]
     @State private var rewardDetailsExpanded = false
+    @State private var practiceGuideExpanded = false
+    @State private var experimentPresented = false
     @AppStorage(AppearanceKey.lessonLayout) private var lessonLayout = LessonLayout.paced
     @AppStorage(AppearanceKey.codeSize) private var codeSize = 14.0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let forceReducedMotion: Bool
 
-    init(assessmentTab: Int = 0, forceReducedMotion: Bool = false) {
+    init(assessmentTab: Int = 0, forceReducedMotion: Bool = false, practiceGuideExpanded: Bool = false) {
         _assessmentTab = State(initialValue: assessmentTab)
+        _practiceGuideExpanded = State(initialValue: practiceGuideExpanded)
         self.forceReducedMotion = forceReducedMotion
     }
 
@@ -68,6 +71,9 @@ struct WorkspaceView: View {
                 generationPresented = false
             }.environmentObject(model)
         }
+        .sheet(isPresented: $experimentPresented) {
+            ExperimentInputsView().environmentObject(model)
+        }
         .sheet(isPresented: $validationDetailsPresented) {
             if model.mode != .assessment, let rejected = model.rejectedPractice {
                 GenerationValidationDetailsView(rejected: rejected).environmentObject(model)
@@ -89,8 +95,10 @@ struct WorkspaceView: View {
         }
         .onChange(of: model.mode) { _, mode in
             assessmentTab = 0
+            experimentPresented = false
             if mode == .assessment { validationDetailsPresented = false; confirmGenerationRepair = false }
         }
+        .onChange(of: model.draftKey) { _, _ in practiceGuideExpanded = false }
         .appearanceEnvironment()
     }
 
@@ -233,6 +241,9 @@ struct WorkspaceView: View {
             Text(model.exercise.id.hasPrefix("generated-") ? "AI-GENERATED PRACTICE" : model.mode == .assessment ? "INDEPENDENT ASSESSMENT" : "REVIEWED PRACTICE")
                 .appFont(.caption, weight: .semibold).tracking(0.8).foregroundStyle(.teal)
             Text(model.exercise.title).appFont(.title2, weight: .bold).fixedSize(horizontal: false, vertical: true)
+            if model.mode == .practice, let guide = model.practiceGuide {
+                PracticeGuideView(guide: guide, isExpanded: $practiceGuideExpanded)
+            }
             DisclosureGroup(isExpanded: $rewardDetailsExpanded) {
                 Text(model.exerciseRewardDetails)
                     .appFont(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -376,7 +387,8 @@ struct WorkspaceView: View {
             }.buttonStyle(.borderless).padding(.horizontal, 14).padding(.vertical, 12)
             Divider()
             VSplitView {
-                CodeEditor(text: $model.code, editable: !model.isBusy && model.isUnlocked, fontSize: codeSize.clamped(to: AppearanceKey.codeRange))
+                CodeEditor(text: $model.code, editable: !model.isBusy && model.isUnlocked, fontSize: codeSize.clamped(to: AppearanceKey.codeRange),
+                           sourceIdentity: model.draftKey, revealRequest: model.editorRevealRequest)
                     .id(model.draftKey).frame(minHeight: 330, maxHeight: .infinity)
                 outputPanel.frame(minHeight: 80, idealHeight: 155, maxHeight: .infinity)
             }
@@ -480,13 +492,37 @@ struct WorkspaceView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Label("OUTPUT & CHECKS", systemImage: "terminal").appFont(.caption2, weight: .semibold)
-                if model.isOutputStale { Text("Previous code version").appFont(.caption2).foregroundStyle(.orange) }
+                if model.isOutputStale { Text("Earlier run").appFont(.caption2).foregroundStyle(.orange) }
                 Spacer()
+                if model.experimentPlan != nil {
+                    Button("Scratch inputs…") { experimentPresented = true }
+                        .appFont(.caption).disabled(model.isBusy)
+                        .help("Try declared input values without editing code or awarding progress")
+                }
                 if model.running { ProgressView().controlSize(.mini) }
             }.foregroundStyle(.secondary).padding(.horizontal, 14).padding(.vertical, 9)
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
+                    if let inputs = model.lastExperimentInputs, model.mode != .assessment {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Experiment · no progress awarded").appFont(.callout, weight: .semibold)
+                            Text(inputs.keys.sorted().map { "\($0) = \(inputs[$0] ?? "")" }.joined(separator: "\n"))
+                                .appFont(.caption, design: .monospaced).textSelection(.enabled)
+                            if model.isOutputStale {
+                                Text("Earlier code or input values — run an experiment again for current results.")
+                                    .appFont(.caption).foregroundStyle(.orange)
+                            }
+                        }
+                    }
+                    if model.mode != .assessment, !model.checkOutcomes.isEmpty {
+                        NamedCheckResultsView(outcomes: model.checkOutcomes, stale: model.isOutputStale, overallPassed: model.solutionChecksPassed)
+                    }
+                    if let diagnostic = model.lastRunDiagnostic {
+                        RunFailureCard(diagnostic: diagnostic, assessment: model.mode == .assessment,
+                                       stale: model.isOutputStale, guidance: model.diagnosticGuidance,
+                                       navigableLine: model.diagnosticLine, reveal: model.revealDiagnosticLine)
+                    }
                     ScrollView(.horizontal) {
                         Text(model.output).font(.system(size: codeSize.clamped(to: AppearanceKey.codeRange) - 2, design: .monospaced)).textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -549,6 +585,218 @@ struct WorkspaceView: View {
             Divider().frame(height: 10)
             Text("AI: \(model.requestCount)/\(model.progress.sessionRequestLimit) requests this launch")
         }.appFont(.caption2).foregroundStyle(.secondary).padding(.horizontal, 16).padding(.vertical, 7)
+    }
+}
+
+struct PracticeGuideView: View {
+    let guide: PracticeGuide
+    @Binding var isExpanded: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 4) {
+                Label(guide.form.title, systemImage: "pencil.and.outline")
+                Label(guide.scaffolding.title, systemImage: "list.bullet.rectangle")
+            }
+            .appFont(.caption).foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            DisclosureGroup(isExpanded: $isExpanded) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(guide.purpose).appFont(.callout).foregroundStyle(.secondary)
+                    Text("Skills to draw on").appFont(.headline)
+                    ForEach(Array(guide.skillTitles.enumerated()), id: \.offset) { _, title in
+                        MarkdownContent(text: "- \(title)")
+                    }
+                    Text("Reflection prompts").appFont(.headline)
+                    Text("Use these prompts in the reflection field below the editor. Your notes are optional in practice and are not automatically graded.")
+                        .appFont(.callout).foregroundStyle(.secondary)
+                    ForEach(guide.reflectionPrompts, id: \.self) { prompt in
+                        MarkdownContent(text: prompt)
+                    }
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
+            } label: {
+                Text("Skills and reflection").appFont(.callout)
+            }
+        }
+    }
+}
+
+struct NamedCheckResultsView: View {
+    let outcomes: [CheckOutcome]
+    let stale: Bool
+    var overallPassed: Bool? = nil
+
+    var overallLabel: String? {
+        overallPassed.map { $0 ? "Solution checks passed" : "Solution checks did not pass" }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let overallLabel {
+                Text(overallLabel).appFont(.callout, weight: .semibold)
+                    .foregroundStyle(overallPassed == true ? Color.teal : Color.orange)
+            }
+            Text("Named checks · \(outcomes.filter { $0.status == .passed }.count)/\(outcomes.count) passed")
+                .appFont(.callout, weight: .semibold)
+            if stale {
+                Text("Previous code version — check your solution again for current results.")
+                    .appFont(.caption).foregroundStyle(.orange)
+            }
+            ForEach(outcomes.prefix(AuthoredCheckPlan.maximumChecks), id: \.id) { outcome in
+                NamedCheckOutcomeRow(outcome: outcome)
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.teal.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+struct NamedCheckOutcomeRow: View {
+    let outcome: CheckOutcome
+    @State private var expanded: Bool
+
+    init(outcome: CheckOutcome) {
+        self.outcome = outcome
+        _expanded = State(initialValue: outcome.status == .failed)
+    }
+
+    var statusLabel: String {
+        switch outcome.status {
+        case .passed: return "Passed"
+        case .failed: return "Failed"
+        case .notReached: return "Not reached"
+        }
+    }
+
+    var body: some View {
+        DisclosureGroup(isExpanded: $expanded) {
+            VStack(alignment: .leading, spacing: 4) {
+                if let expected = outcome.expected { Text("Expected: \(expected)").appFont(.caption, design: .monospaced) }
+                if let actual = outcome.actual { Text("Actual: \(actual)").appFont(.caption, design: .monospaced) }
+                if let detail = outcome.detail { Text(detail).appFont(.caption).foregroundStyle(.secondary) }
+            }
+            .textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 3)
+        } label: {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(statusLabel).appFont(.caption, weight: .semibold)
+                    .foregroundStyle(outcome.status == .passed ? Color.teal : outcome.status == .failed ? Color.orange : Color.secondary)
+                Text(outcome.title).appFont(.callout).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .accessibilityLabel("\(statusLabel): \(outcome.title)")
+        .onChange(of: outcome) { _, updated in expanded = updated.status == .failed }
+    }
+}
+
+struct ExperimentInputsView: View {
+    @EnvironmentObject private var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Scratch inputs").appFont(.title2, weight: .bold)
+            Text("Try a small change to the declared inputs. Use Python literal values, such as 3, 'hello', True or [1, 2]. Expressions and function calls are not accepted.")
+                .appFont(.callout).foregroundStyle(.secondary)
+            Text("Experiments do not award progress or check your solution. Your editor code and saved draft are not changed.")
+                .appFont(.callout)
+            if let plan = model.experimentPlan {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
+                        ForEach(plan.inputs, id: \.name) { input in
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text(input.name).appFont(.callout, weight: .semibold, design: .monospaced)
+                                TextField("Python literal", text: Binding(
+                                    get: { model.experimentInputs[input.name] ?? input.defaultLiteral },
+                                    set: { model.experimentInputs[input.name] = $0 }))
+                                    .textFieldStyle(.roundedBorder)
+                                    .appFont(.body, design: .monospaced)
+                                    .accessibilityLabel("\(input.name) Python literal")
+                                Text("Default: \(input.defaultLiteral)")
+                                    .appFont(.caption, design: .monospaced).foregroundStyle(.secondary).textSelection(.enabled)
+                            }
+                        }
+                    }.padding(.trailing, 4)
+                }.disabled(model.isBusy)
+                HStack {
+                    Button("Reset inputs") { model.resetExperimentInputs() }.disabled(model.isBusy)
+                    Spacer()
+                    Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
+                    Button("Run experiment") {
+                        model.runExperiment()
+                        dismiss()
+                    }
+                    .buttonStyle(.borderedProminent).tint(.teal).disabled(model.isBusy)
+                }
+            } else {
+                Text("Scratch inputs are available only for unlocked Learn or Practice activities with declared inputs.")
+                    .appFont(.callout)
+                Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
+            }
+        }
+        .padding(24).frame(width: 520, height: 460)
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+}
+
+struct RunFailureCard: View {
+    let diagnostic: RunDiagnostic
+    let assessment: Bool
+    let stale: Bool
+    let guidance: String?
+    let navigableLine: Int?
+    let reveal: () -> Void
+
+    var originLabel: String {
+        switch diagnostic.origin {
+        case .learner: return "Your code"
+        case .checks: return "Checks"
+        case .runner: return "Python runner"
+        }
+    }
+
+    var displayedMessage: String? { assessment || diagnostic.message.isEmpty ? nil : diagnostic.message }
+    var displayedGuidance: String? { assessment || stale ? nil : guidance }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline) {
+                Label(diagnostic.exceptionType, systemImage: "exclamationmark.circle")
+                    .appFont(.callout, weight: .semibold)
+                Text(originLabel).appFont(.caption).foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+            }
+            if stale {
+                Text("Previous code version — run again for a current location.")
+                    .appFont(.caption).foregroundStyle(.secondary)
+            }
+            if let displayedMessage {
+                Text(displayedMessage).appFont(.callout).textSelection(.enabled)
+            }
+            if !diagnostic.frames.isEmpty {
+                Text(diagnostic.frames.map { "\($0.function) · line \($0.line)" }.joined(separator: " → "))
+                    .appFont(.caption, design: .monospaced).textSelection(.enabled)
+                    .accessibilityLabel("Your code frames, outermost first: " + diagnostic.frames.map { "\($0.function), line \($0.line)" }.joined(separator: "; "))
+            }
+            if let displayedGuidance {
+                Text(displayedGuidance).appFont(.callout).foregroundStyle(.secondary)
+            }
+            if let line = diagnostic.learnerLine, diagnostic.origin == .learner {
+                Button("Go to line \(line)", action: reveal)
+                    .appFont(.caption).buttonStyle(.borderless)
+                    .disabled(stale || navigableLine != line)
+                    .accessibilityLabel("Go to line \(line) in your Python code")
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Run failure")
     }
 }
 

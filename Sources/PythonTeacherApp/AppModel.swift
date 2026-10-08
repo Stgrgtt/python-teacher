@@ -10,9 +10,14 @@ final class AppModel: ObservableObject {
     @Published var progress: ProgressState
     @Published var code = "" {
         didSet {
+            editorRevealRequest = nil
             guard !loading else { return }
             progress.drafts[draftKey] = code
-            if isOutputStale { feedback = "Code changed since the last run. The output below belongs to an earlier version; run checks again." }
+            if isOutputStale {
+                feedback = teacherRun?.operation != "Experiment"
+                    ? "Code changed since the last run. The output below belongs to an earlier version; run checks again."
+                    : "Code changed since the experiment. The output below belongs to earlier code or inputs; run an experiment again. No progress was awarded."
+            }
             scheduleSave()
         }
     }
@@ -26,6 +31,19 @@ final class AppModel: ObservableObject {
     @Published var output = "Run your code to see its output here."
     @Published var feedback = ""
     @Published var lastRunCode: String?
+    @Published var lastRunDiagnostic: RunDiagnostic?
+    @Published var checkOutcomes: [CheckOutcome] = []
+    @Published var experimentInputs: [String: String] = [:] {
+        didSet {
+            guard experimentInputs != oldValue else { return }
+            editorRevealRequest = nil
+            if teacherRun?.operation == "Experiment", isOutputStale {
+                feedback = "Experiment inputs or code changed. The output below belongs to an earlier experiment; run an experiment again. No progress was awarded."
+            }
+        }
+    }
+    @Published private(set) var lastExperimentInputs: [String: String]?
+    @Published private(set) var editorRevealRequest: EditorRevealRequest?
     @Published var running = false
     @Published var teacherBusy = false
     @Published private(set) var updatingRewards = false
@@ -139,6 +157,14 @@ final class AppModel: ObservableObject {
         return exercises.first { $0.id == progress.selectedExerciseIDs[chapter.id] } ?? chapter.exercises[0]
     }
 
+    var practiceGuide: PracticeGuide? {
+        guard mode != .assessment,
+              let reviewed = chapter.exercises.first(where: { $0.id == exercise.id }),
+              !Curriculum.isAssessment(reviewed.id, in: chapters),
+              let profile = reviewed.practiceProfile else { return nil }
+        return PracticeGuide.resolve(profile, chapterID: chapter.id, graph: curriculumGraph)
+    }
+
     private func savedLegacyExercises(mode: LearningMode) -> [Exercise] {
         Curriculum.legacyExercises(chapterID: chapter.id, mode: mode).filter { exercise in
             let key = "\(chapter.id):\(mode == .assessment ? "assessment" : "practice"):\(exercise.id)"
@@ -170,7 +196,52 @@ final class AppModel: ObservableObject {
     var hintCount: Int { max(0, progress.hintCounts[draftKey] ?? 0) }
     var builtInHintCount: Int { min(exercise.hints.count, max(0, progress.hintCounts[draftKey + ":builtin"] ?? 0)) }
     var canShowHint: Bool { builtInHintCount < exercise.hints.count }
-    var isOutputStale: Bool { lastRunCode != nil && lastRunCode != code }
+    var experimentPlan: AuthoredCheckPlan? { mode != .assessment && isUnlocked ? exercise.checkPlan : nil }
+    var solutionChecksPassed: Bool? { teacherRun?.operation == "Check solution" ? teacherRun?.checksPassed : nil }
+    var isOutputStale: Bool {
+        if let run = teacherRun, run.operation == "Experiment" {
+            return run.code != code || run.inputOverrides != currentExperimentInputs
+        }
+        return lastRunCode != nil && lastRunCode != code
+    }
+    var currentExperimentInputs: [String: String] {
+        guard let plan = experimentPlan else { return [:] }
+        return Dictionary(plan.inputs.map { ($0.name, $0.defaultLiteral) }, uniquingKeysWith: { first, _ in first })
+            .merging(experimentInputs) { _, override in override }
+    }
+
+    func resetExperimentInputs() {
+        guard !isBusy else { return }
+        experimentInputs = Dictionary((experimentPlan?.inputs ?? []).map { ($0.name, $0.defaultLiteral) }, uniquingKeysWith: { first, _ in first })
+    }
+    var diagnosticLine: Int? {
+        guard !isBusy, isUnlocked, !isOutputStale, lastRunCode == code,
+              let diagnostic = lastRunDiagnostic, diagnostic.origin == .learner,
+              let line = diagnostic.learnerLine, EditorRevealRequest.lineRange(line, in: code) != nil else { return nil }
+        return line
+    }
+    var diagnosticGuidance: String? {
+        guard mode != .assessment, !isBusy, !isOutputStale, lastRunCode == code,
+              let diagnostic = lastRunDiagnostic, diagnostic.origin == .learner else { return nil }
+        switch diagnostic.exceptionType {
+        case "SyntaxError": return "Python could not read this code. Check punctuation and matching quotes or brackets near the reported line."
+        case "IndentationError", "TabError": return "Indentation tells Python which lines belong together. Check the spaces at the start of this block."
+        case "NameError", "UnboundLocalError": return "A name has no value here. Check its spelling and where it is assigned before this line runs."
+        case "TypeError": return "An operation received a kind of value it cannot use. Compare the values and their types at this step."
+        case "ValueError": return "The kind of value was accepted, but its content was not. Check the value being converted or passed in."
+        case "IndexError": return "A sequence position is outside its available items. Python positions start at zero. Check the sequence length and the position used."
+        case "KeyError": return "A requested dictionary key is missing. Compare the key with the keys actually present."
+        case "AttributeError": return "This value does not provide the requested attribute or method. Check what kind of value it is."
+        case "ZeroDivisionError": return "A calculation tried to divide by zero. Check how the divisor gets its value."
+        case "AssertionError": return "A condition expected to be true was false. Compare the expected behavior with what happened."
+        default: return "Python stopped at an error. Read the final error message, form one hypothesis, then make one change and run again."
+        }
+    }
+
+    func revealDiagnosticLine() {
+        guard let line = diagnosticLine else { return }
+        editorRevealRequest = EditorRevealRequest(sourceIdentity: draftKey, source: code, line: line)
+    }
     var teacherHistory: [(role: String, text: String)] { messages.filter(\.includeInContext).map { (role: $0.role, text: $0.text) } }
     var solutionRevealed: Bool { progress.revealedSolutions.contains(draftKey) }
     var quizAnswers: [String: Int] { progress.quizAnswers[chapter.id] ?? [:] }
@@ -442,7 +513,12 @@ final class AppModel: ObservableObject {
         guard !isBusy else { return }
         code = exercise.starterCode
         lastRunCode = nil
+        lastRunDiagnostic = nil
+        editorRevealRequest = nil
         teacherRun = nil
+        checkOutcomes = []
+        lastExperimentInputs = nil
+        experimentInputs = Dictionary((experimentPlan?.inputs ?? []).map { ($0.name, $0.defaultLiteral) }, uniquingKeysWith: { first, _ in first })
         output = "Run your code to see its output here."
         feedback = "Starter restored. Previous submitted attempts remain in your history. Assistance and solution history is preserved."
     }
@@ -472,6 +548,12 @@ final class AppModel: ObservableObject {
             }
         }
         running = true
+        lastRunCode = nil
+        lastRunDiagnostic = nil
+        checkOutcomes = []
+        lastExperimentInputs = nil
+        teacherRun = nil
+        editorRevealRequest = nil
         feedback = ""
         output = test || submit ? "Running checks in a restricted Python workspace…" : "Running Python…"
         let snapshot = code
@@ -487,14 +569,25 @@ final class AppModel: ObservableObject {
         workTask = Task {
             defer { running = false; workTask = nil }
             do {
-                let result = try await runner.run(code: snapshot, tests: test || submit ? exercise.testCode : nil, pythonPath: path)
+                let result: RunResult
+                if (test || submit) && mode != .assessment {
+                    result = try await runner.check(code: snapshot, exercise: exercise, pythonPath: path)
+                } else {
+                    result = try await runner.run(code: snapshot, tests: test || submit ? exercise.testCode : nil, pythonPath: path)
+                }
+                if result.exitCode == -1 && !result.cancelled && !result.timedOut {
+                    throw AppError.message(result.output)
+                }
                 lastRunCode = snapshot
+                lastRunDiagnostic = result.diagnostic
+                checkOutcomes = mode == .assessment ? [] : result.checkOutcomes
+                editorRevealRequest = nil
                 output = result.output.isEmpty ? "Program finished without printed output." : result.output
                 let cancelled = result.cancelled || Task.isCancelled
                 teacherRun = TeacherRunEvidence(code: snapshot, operation: test || submit ? "Check solution" : "Run",
                     outcome: cancelled ? "Cancelled" : result.timedOut ? "Timed out" : "Finished",
                     exitCode: result.exitCode, checksPassed: test || submit ? (!cancelled && !result.timedOut && result.passed) : nil,
-                    output: result.output)
+                    output: result.output, checkOutcomes: checkOutcomes.isEmpty ? nil : checkOutcomes)
                 if result.cancelled || Task.isCancelled { feedback = "Run cancelled. No attempt recorded."; return }
                 if result.timedOut { feedback = "Time limit reached. Check for a loop that never ends." }
                 else if test || submit { feedback = result.passed ? "All code checks passed." : "Code checks did not pass. Read the error output, then make one focused change." }
@@ -524,11 +617,64 @@ final class AppModel: ObservableObject {
                 }
             } catch {
                 lastRunCode = nil
+                lastRunDiagnostic = nil
+                checkOutcomes = []
+                editorRevealRequest = nil
                 output = Task.isCancelled ? "Execution cancelled." : error.localizedDescription
                 teacherRun = TeacherRunEvidence(code: snapshot, operation: test || submit ? "Check solution" : "Run",
                     outcome: Task.isCancelled ? "Cancelled" : "Execution could not complete",
                     exitCode: nil, checksPassed: nil, output: output)
                 feedback = Task.isCancelled ? "Run cancelled. No attempt recorded." : "Execution could not complete. Check the error and Python interpreter in Settings. Execution never falls back to an unrestricted process."
+            }
+        }
+    }
+
+    func runExperiment() {
+        guard !isBusy, isUnlocked, mode != .assessment, let plan = experimentPlan else { return }
+        let snapshot = code
+        let inputs = currentExperimentInputs
+        let path = progress.pythonPath
+        running = true
+        lastRunCode = nil
+        lastRunDiagnostic = nil
+        checkOutcomes = []
+        lastExperimentInputs = nil
+        teacherRun = nil
+        editorRevealRequest = nil
+        feedback = ""
+        output = "Running an experiment in a restricted Python workspace…"
+        workTask = Task {
+            defer { running = false; workTask = nil }
+            do {
+                try plan.validate(overrides: inputs)
+                let result = try await runner.experiment(code: snapshot, plan: plan, inputs: inputs, pythonPath: path)
+                if !result.cancelled && !result.timedOut && (result.exitCode == -1 || result.diagnostic?.origin == .runner) {
+                    throw AppError.message(result.output)
+                }
+                let cancelled = result.cancelled || Task.isCancelled
+                lastRunCode = snapshot
+                lastRunDiagnostic = result.diagnostic
+                lastExperimentInputs = inputs
+                output = result.output.isEmpty ? "Experiment finished without printed output." : result.output
+                teacherRun = TeacherRunEvidence(code: snapshot, operation: "Experiment",
+                    outcome: cancelled ? "Cancelled" : result.timedOut ? "Timed out" : "Finished",
+                    exitCode: result.exitCode, checksPassed: nil, output: result.output, inputOverrides: inputs)
+                feedback = cancelled ? "Experiment cancelled." : result.timedOut ? "Experiment reached its time limit."
+                    : result.passed ? "Experiment finished. This is not a solution check." : "Experiment did not finish normally. Read the output."
+                feedback += " No progress was awarded; your editor code is unchanged."
+                if isOutputStale { feedback += " Code or inputs changed during this experiment; the output is from the earlier version." }
+            } catch {
+                lastRunCode = nil
+                lastRunDiagnostic = nil
+                checkOutcomes = []
+                lastExperimentInputs = nil
+                editorRevealRequest = nil
+                output = Task.isCancelled ? "Experiment cancelled." : error.localizedDescription
+                teacherRun = TeacherRunEvidence(code: snapshot, operation: "Experiment",
+                    outcome: Task.isCancelled ? "Cancelled" : "Execution could not complete",
+                    exitCode: nil, checksPassed: nil, output: output, inputOverrides: inputs)
+                feedback = Task.isCancelled ? "Experiment cancelled. No progress was awarded; your editor code is unchanged."
+                    : "Experiment did not complete. No progress was awarded; your editor code is unchanged. Check the input literals and Python interpreter. Execution never falls back to an unrestricted process."
             }
         }
     }
@@ -548,14 +694,27 @@ final class AppModel: ObservableObject {
             ?? "No previous snapshot available for comparison"
         let runChange = previous.map { $0.runID == version.runID ? "Unchanged since previous teacher request" : teacherRun == nil ? "Previous run evidence cleared" : "New run since previous teacher request" }
             ?? "No previous snapshot available for comparison"
-        let runStatus = teacherRun.map { $0.code == code ? "Latest run belongs to current code" : "Latest run belongs to older code; current code has not been run" }
+        let runStatus = teacherRun.map { run in
+            if run.operation == "Experiment" {
+                let fresh = run.code == code && run.inputOverrides == currentExperimentInputs
+                if run.outcome == "Execution could not complete" {
+                    return "Latest experiment did not complete; its recorded source and inputs are not successful execution evidence. "
+                        + (fresh ? "The attempted code and inputs are unchanged." : "Current code or inputs differ from that attempt.")
+                }
+                return fresh ? "Latest experiment belongs to current code and inputs. Experiments do not check solutions or award progress."
+                    : "Latest experiment belongs to older code or inputs; current code and inputs have not been run together. Experiments do not check solutions or award progress."
+            }
+            return run.code == code ? "Latest run belongs to current code" : "Latest run belongs to older code; current code has not been run"
+        }
             ?? "No run evidence available in this workspace. Run evidence is cleared on navigation, restart, or restoring the starter. Do not infer a current result from conversation history."
         let snapshot = TeacherWorkspaceSnapshot(capturedAt: Date(), chapterID: chapter.id, chapter: chapter.title,
             directPrerequisites: directPrerequisites.map(\.title), prerequisiteChapters: prerequisiteChapters.map(\.title),
             mode: mode.rawValue, lesson: chapter.lesson, exerciseID: exercise.id, exerciseTitle: exercise.title,
             instructions: exercise.instructions, starterCode: exercise.starterCode, currentCode: code,
             codeChange: codeChange, runChange: runChange, runStatus: runStatus, latestRun: teacherRun,
-            hintsUsed: hintCount, solutionRevealed: solutionRevealed)
+            hintsUsed: hintCount, solutionRevealed: solutionRevealed,
+            currentExperimentInputs: experimentPlan == nil ? nil : currentExperimentInputs,
+            practiceProfile: practiceGuide)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         encoder.dateEncodingStrategy = .iso8601
@@ -573,6 +732,7 @@ final class AppModel: ObservableObject {
         guard let client = teacherClient() else { return }
         let history = teacherHistory
         let workspaceKey = draftKey
+        let inputSnapshot = currentExperimentInputs
         if mode == .practice { progress.hintCounts[draftKey] = hintCount + 1; scheduleSave() }
         messages.append(TeacherMessage(role: "user", text: question, contextVersion: version))
         teacherBusy = true
@@ -583,7 +743,8 @@ final class AppModel: ObservableObject {
                 let reply = try await client.respond(context: context, question: question, history: history)
                 try Task.checkCancellation()
                 recordUsage(reply)
-                guard draftKey == workspaceKey, mode != .assessment, teacherContextVersion == version else {
+                guard draftKey == workspaceKey, mode != .assessment, teacherContextVersion == version,
+                      currentExperimentInputs == inputSnapshot else {
                     notice = "Your workspace changed while the teacher was replying. The outdated reply was not added. Ask again to send the latest code and output."
                     return
                 }
@@ -642,9 +803,12 @@ final class AppModel: ObservableObject {
                 .replacingOccurrences(of: temporary.resolvingSymlinksInPath().path, with: "<temporary>")
                 .replacingOccurrences(of: temporary.path, with: "<temporary>")
                 .replacingOccurrences(of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~").suffix(6000))
-            let reason = result.timedOut ? "Local Python execution exceeded its eight-second limit."
+            let executionReason = result.timedOut ? "Local Python execution exceeded its eight-second limit."
                 : result.passed ? "The starter already passes all checks."
                 : String(diagnostic.split(whereSeparator: \.isNewline).last.map(String.init)?.prefix(240) ?? "No Python diagnostic was returned.")
+            let reason = stage == "Starter" && options.style == .debug
+                ? "Debug practice requires runnable code with a logical error: only a checks-origin AssertionError satisfies this contract. \(executionReason)"
+                : executionReason
             let feedback = "\(stage) validation. Exit code: \(result.exitCode). Timed out: \(result.timedOut).\n\(reason)\n\n\(diagnostic)"
             rejectedPractice = RejectedPractice(chapterID: chapter.id, chapterTitle: chapter.title, model: modelName,
                 options: options, selectedExercise: selectedExercise,
@@ -673,7 +837,7 @@ final class AppModel: ObservableObject {
                 let starter = try await runner.run(code: generated.starterCode, tests: generated.testCode, pythonPath: path)
                 try Task.checkCancellation()
                 guard !starter.cancelled else { throw CancellationError() }
-                guard !starter.passed, !starter.timedOut else {
+                guard options.style.acceptsStarterFailure(starter) else {
                     throw rejection(generated, stage: "Starter", result: starter)
                 }
                 generated.effort = try await runner.analyzeEffort(exercises: [generated], pythonPath: path).first?
@@ -798,7 +962,12 @@ final class AppModel: ObservableObject {
     private func resetWorkspace() {
         loadDraft()
         lastRunCode = nil
+        lastRunDiagnostic = nil
+        editorRevealRequest = nil
         teacherRun = nil
+        checkOutcomes = []
+        lastExperimentInputs = nil
+        experimentInputs = Dictionary((experimentPlan?.inputs ?? []).map { ($0.name, $0.defaultLiteral) }, uniquingKeysWith: { first, _ in first })
         output = "Run your code to see its output here."
         feedback = ""
         if mode != .assessment, progress.teacherConversations[draftKey] == nil, builtInHintCount > 0 {
@@ -842,6 +1011,8 @@ private struct TeacherRunEvidence: Encodable {
     let exitCode: Int32?
     let checksPassed: Bool?
     let output: String
+    var inputOverrides: [String: String]? = nil
+    var checkOutcomes: [CheckOutcome]? = nil
 }
 
 private struct TeacherWorkspaceSnapshot: Encodable {
@@ -863,6 +1034,29 @@ private struct TeacherWorkspaceSnapshot: Encodable {
     let latestRun: TeacherRunEvidence?
     let hintsUsed: Int
     let solutionRevealed: Bool
+    let currentExperimentInputs: [String: String]?
+    let practiceProfile: PracticeGuide?
+}
+
+struct PracticeGuide: Encodable, Equatable {
+    let form: PracticeForm
+    let scaffolding: PracticeScaffolding
+    let skillTitles: [String]
+    let reflectionPrompts: [String]
+    let purpose = "This describes the task's design, not independent completion or chapter mastery. Hints remain available."
+
+    static func resolve(_ profile: PracticeProfile, chapterID: String, graph: CurriculumGraph) -> PracticeGuide? {
+        guard profile.isWellFormed, let toolkit = graph.closureIncludingSelf(of: chapterID) else { return nil }
+        let sections = toolkit.flatMap(\.lessonSections).filter { $0.role != .overview }
+        var titles: [String] = []
+        for id in profile.skillIDs {
+            let matches = sections.filter { $0.topic.id == id }
+            guard matches.count == 1, let section = matches.first else { return nil }
+            titles.append(section.topic.title)
+        }
+        return PracticeGuide(form: profile.form, scaffolding: profile.scaffolding,
+                             skillTitles: titles, reflectionPrompts: profile.reflectionPrompts)
+    }
 }
 
 struct RejectedPractice: Sendable {

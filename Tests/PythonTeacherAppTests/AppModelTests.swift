@@ -650,6 +650,206 @@ final class AppModelTests: XCTestCase {
     }
 
     @MainActor
+    func testPracticeGuidesResolveCurrentAndPrerequisiteSectionTitlesWithoutInventingSkills() throws {
+        for chapter in model.chapters {
+            model.selectChapter(chapter.id)
+            let toolkit = try XCTUnwrap(model.curriculumGraph.closureIncludingSelf(of: chapter.id))
+            let sections = toolkit.flatMap(\.lessonSections).filter { $0.role != .overview }
+            for exercise in chapter.exercises {
+                model.selectExercise(exercise.id)
+                let profile = try XCTUnwrap(exercise.practiceProfile, exercise.id)
+                let guide = try XCTUnwrap(model.practiceGuide, exercise.id)
+                XCTAssertEqual(guide.form, profile.form)
+                XCTAssertEqual(guide.scaffolding, profile.scaffolding)
+                XCTAssertEqual(guide.skillTitles, profile.skillIDs.compactMap { id in sections.first { $0.topic.id == id }?.topic.title })
+                XCTAssertEqual(guide.reflectionPrompts, profile.reflectionPrompts)
+                XCTAssertFalse(guide.skillTitles.contains { $0.contains("-section-") })
+            }
+            model.selectMode(.assessment)
+            XCTAssertNil(model.practiceGuide)
+        }
+        let basics = try XCTUnwrap(model.curriculumGraph.chapter("basics"))
+        let values = try XCTUnwrap(model.curriculumGraph.chapter("values"))
+        let basicSkill = try XCTUnwrap(basics.lessonSections.first { $0.role != .overview })
+        let valueSkill = try XCTUnwrap(values.lessonSections.first { $0.role != .overview })
+        let profile = PracticeProfile(form: .transfer, scaffolding: .independent,
+                                      skillIDs: [basicSkill.topic.id, valueSkill.topic.id], reflectionPrompts: ["Why did you choose this approach?"])
+        let guide = try XCTUnwrap(PracticeGuide.resolve(profile, chapterID: values.id, graph: model.curriculumGraph))
+        XCTAssertEqual(guide.skillTitles, [basicSkill.topic.title, valueSkill.topic.title])
+        XCTAssertEqual(guide.form.title, "Apply in a new context")
+        XCTAssertEqual(guide.scaffolding.title, "Choose your approach")
+        XCTAssertNil(PracticeGuide.resolve(profile, chapterID: basics.id, graph: model.curriculumGraph))
+        let overview = try XCTUnwrap(basics.lessonSections.first { $0.role == .overview })
+        for ids in [[], [overview.topic.id], ["basics-section-999"], [basicSkill.topic.id, basicSkill.topic.id], ["opaque"]] {
+            let invalid = PracticeProfile(form: .write, scaffolding: .guided, skillIDs: ids, reflectionPrompts: ["Why?"])
+            XCTAssertNil(PracticeGuide.resolve(invalid, chapterID: basics.id, graph: model.curriculumGraph))
+        }
+        let malformed = PracticeProfile(form: .write, scaffolding: .guided, skillIDs: [basicSkill.topic.id], reflectionPrompts: [" "])
+        XCTAssertNil(PracticeGuide.resolve(malformed, chapterID: basics.id, graph: model.curriculumGraph))
+        XCTAssertNil(PracticeGuide.resolve(profile, chapterID: "missing", graph: model.curriculumGraph))
+    }
+
+    @MainActor
+    func testMissingMalformedAndUnresolvedProfilesFallBackWithoutChangingTheSelectedDraft() throws {
+        let original = model.chapter
+        var exercise = original.exercises[0]
+        let valid = try XCTUnwrap(exercise.practiceProfile)
+        var assessment = original.assessment
+        assessment.practiceProfile = valid
+        let profiles: [PracticeProfile?] = [nil,
+            PracticeProfile(form: .write, scaffolding: .guided, skillIDs: [], reflectionPrompts: []),
+            PracticeProfile(form: .transfer, scaffolding: .independent, skillIDs: ["values-section-2"], reflectionPrompts: ["Why?"])]
+        model.selectExercise(exercise.id)
+        let key = model.draftKey
+        model.code = "unchanged_saved_draft = 11"
+        model.reflection = "Unchanged saved reasoning"
+        model.flushSave()
+        for profile in profiles {
+            exercise.practiceProfile = profile
+            let chapter = Chapter(id: original.id, title: original.title, subtitle: original.subtitle,
+                                  lesson: original.lesson, exercises: [exercise], assessment: assessment, quiz: original.quiz,
+                                  sectionRoles: original.sectionRoles)
+            model = AppModel(store: model.store, chapters: [chapter])
+            XCTAssertNil(model.practiceGuide)
+            XCTAssertEqual(model.exercise.id, exercise.id)
+            XCTAssertEqual(model.draftKey, key)
+            XCTAssertEqual(model.code, "unchanged_saved_draft = 11")
+            XCTAssertEqual(model.reflection, "Unchanged saved reasoning")
+            model.selectMode(.assessment)
+            XCTAssertNotNil(model.exercise.practiceProfile)
+            XCTAssertNil(model.practiceGuide)
+            model.selectMode(.practice)
+            model.flushSave()
+        }
+    }
+
+    @MainActor
+    func testPracticeGuideLabelsDescribeTaskDesignWithoutRecordingAssistanceOrProgress() throws {
+        let forms: [(PracticeForm, String)] = [(.write, "Write code"), (.complete, "Complete code"), (.predict, "Predict behavior"),
+            (.debug, "Diagnose and repair"), (.counterexample, "Find a counterexample"), (.transfer, "Apply in a new context"),
+            (.refactor, "Refactor"), (.maintenance, "Change a requirement"), (.project, "Build a project")]
+        for (form, title) in forms { XCTAssertEqual(form.title, title) }
+        XCTAssertEqual(PracticeScaffolding.guided.title, "Step-by-step guidance")
+        XCTAssertEqual(PracticeScaffolding.light.title, "Some structure supplied")
+        XCTAssertEqual(PracticeScaffolding.independent.title, "Choose your approach")
+        let hints = model.progress.hintCounts
+        let attempts = model.progress.attempts.map(\.id)
+        let mastery = model.progress.masteredChapterIDs
+        let xp = model.progress.playerProgress.totalXP
+        let requests = model.requestCount
+        let conversation = model.progress.teacherConversations
+        for id in [model.chapter.exercises[0].id, "basics-transfer-delivery-note"] {
+            model.selectExercise(id)
+            let guide = try XCTUnwrap(model.practiceGuide)
+            XCTAssertTrue(guide.purpose.contains("not independent completion or chapter mastery"))
+            XCTAssertTrue(guide.purpose.contains("Hints remain available"))
+            model.selectMode(.lesson)
+            XCTAssertEqual(model.practiceGuide, guide)
+        }
+        XCTAssertEqual(model.progress.hintCounts, hints)
+        XCTAssertEqual(model.progress.attempts.map(\.id), attempts)
+        XCTAssertEqual(model.progress.masteredChapterIDs, mastery)
+        XCTAssertEqual(model.progress.playerProgress.totalXP, xp)
+        XCTAssertEqual(model.requestCount, requests)
+        XCTAssertEqual(model.progress.teacherConversations, conversation)
+        XCTAssertFalse(model.teacherBusy)
+    }
+
+    @MainActor
+    func testNineAdditivePracticeDraftsAndReflectionsResumeWithoutChangingSavedWork() throws {
+        model.selectChapter("values")
+        model.selectExercise("values-label")
+        let originalKey = model.draftKey
+        model.code = "raw_label = '  ORBIT  '\nclean_label = raw_label.strip()"
+        model.reflection = "My original reasoning"
+        model.progress.hintCounts[originalKey] = 2
+        model.progress.hintCounts[originalKey + ":builtin"] = 1
+        model.progress.attempts.append(Attempt(chapterID: "values", exerciseID: "values-label", mode: .practice,
+                                              code: model.code, testsPassed: true, hintCount: 2, reflection: model.reflection,
+                                              effort: model.exercise.effort))
+        model.flushSave()
+        let original = try model.store.load()
+        model = AppModel(store: model.store)
+        XCTAssertEqual(model.exercise.id, "values-label")
+        XCTAssertEqual(model.code, original.drafts[originalKey])
+        XCTAssertEqual(model.reflection, original.reflections[originalKey])
+        XCTAssertNotNil(model.practiceGuide)
+        let tasks = ["basics-transfer-delivery-note", "values-transfer-workshop-cost", "decisions-transfer-library-entry",
+                     "loops-transfer-water-log", "functions-transfer-ticket-total", "functions-refactor-batch-cost",
+                     "collections-transfer-stock-report", "collections-maintenance-label-counts", "reliability-transfer-gradebook"]
+        var keys: [String: String] = [:]
+        for (index, id) in tasks.enumerated() {
+            let chapter = try XCTUnwrap(model.chapters.first { $0.exercises.contains { $0.id == id } })
+            model.selectChapter(chapter.id)
+            XCTAssertEqual(model.exercises.map(\.id), chapter.exercises.map(\.id))
+            model.selectExercise(id)
+            XCTAssertEqual(model.exercise.id, id)
+            XCTAssertEqual(model.code, model.exercise.starterCode)
+            XCTAssertEqual(model.reflection, "")
+            keys[id] = model.draftKey
+            model.code = "synthetic_draft = \(index)"
+            model.reflection = "Separate reflection \(index)"
+        }
+        model.flushSave()
+        model = AppModel(store: model.store)
+        XCTAssertEqual(model.exercise.id, tasks.last)
+        for (index, id) in tasks.enumerated() {
+            let chapter = try XCTUnwrap(model.chapters.first { $0.exercises.contains { $0.id == id } })
+            model.selectChapter(chapter.id)
+            model.selectExercise(id)
+            XCTAssertEqual(model.draftKey, keys[id])
+            XCTAssertEqual(model.code, "synthetic_draft = \(index)")
+            XCTAssertEqual(model.reflection, "Separate reflection \(index)")
+            model.selectMode(.assessment)
+            XCTAssertNil(model.practiceGuide)
+            XCTAssertNotEqual(model.draftKey, keys[id])
+            model.selectMode(.practice)
+            XCTAssertEqual(model.code, "synthetic_draft = \(index)")
+        }
+        model.selectChapter("values")
+        model.selectExercise("values-label")
+        XCTAssertEqual(model.code, original.drafts[originalKey])
+        XCTAssertEqual(model.reflection, original.reflections[originalKey])
+        XCTAssertEqual(model.hintCount, 2)
+        XCTAssertEqual(model.builtInHintCount, 1)
+        XCTAssertEqual(model.progress.attempts.map(\.id), original.attempts.map(\.id))
+        XCTAssertEqual(model.progress.playerProgress.totalXP, original.playerProgress.totalXP)
+        XCTAssertEqual(model.progress.masteredChapterIDs, original.masteredChapterIDs)
+        model.flushSave()
+        let saved = try model.store.load()
+        XCTAssertEqual(saved.drafts[originalKey], original.drafts[originalKey])
+        XCTAssertEqual(saved.reflections[originalKey], original.reflections[originalKey])
+        XCTAssertEqual(saved.hintCounts, original.hintCounts)
+    }
+
+    @MainActor
+    func testUnprofiledGeneratedAndLegacyPracticeKeepTheirOriginalBehavior() throws {
+        var generated = model.exercise
+        generated.id = "generated-synthetic-unprofiled"
+        generated.practiceProfile = nil
+        model.progress.generatedExercises[model.chapter.id] = [generated]
+        model.selectExercise(generated.id)
+        model.code = "saved_generated_draft = 7"
+        model.reflection = "Saved generated reflection"
+        XCTAssertNil(model.practiceGuide)
+        model.flushSave()
+        model = AppModel(store: model.store)
+        XCTAssertEqual(model.exercise, generated)
+        XCTAssertNil(model.practiceGuide)
+        XCTAssertEqual(model.code, "saved_generated_draft = 7")
+        XCTAssertEqual(model.reflection, "Saved generated reflection")
+        model.selectChapter("decisions")
+        let legacy = try XCTUnwrap(Curriculum.legacyExercises(chapterID: "decisions", mode: .practice).first)
+        let key = "decisions:practice:\(legacy.id)"
+        model.progress.drafts[key] = "saved_legacy_draft = 9"
+        model.progress.reflections[key] = "Saved legacy reflection"
+        model.selectExercise(legacy.id)
+        XCTAssertNil(model.practiceGuide)
+        XCTAssertEqual(model.code, "saved_legacy_draft = 9")
+        XCTAssertEqual(model.reflection, "Saved legacy reflection")
+    }
+
+    @MainActor
     func testDraftsResumeSeparatelyForPracticeAndAssessment() throws {
         model.selectMode(.practice)
         model.code = "practice_draft = 17"
@@ -1403,6 +1603,478 @@ final class AppModelTests: XCTestCase {
     }
 
     @MainActor
+    private func installReadableChecks() {
+        let plan = AuthoredCheckPlan(inputs: [.init(name: "count", defaultLiteral: "3"), .init(name: "bonus", defaultLiteral: "1")], checks: [
+            .init(id: "empty", title: "No items still includes the bonus", inputs: ["count": "0"], target: "result", expectedLiteral: "1"),
+            .init(id: "three", title: "Three items count twice", target: "result", expectedLiteral: "7"),
+            .init(id: "five", title: "Five items count twice", inputs: ["count": "5"], target: "result", expectedLiteral: "11")
+        ])
+        let exercise = Exercise(id: "synthetic-readable-checks", title: "Count synthetic items", instructions: "Goal:\nDouble the count and add the bonus.\n\nStarting code:\nThe arithmetic is incorrect.\n\nYour task:\nFix the calculation.\n\nExpected result:\nSeven for the default inputs.\n\nCheck:\nRun each named case and the original checks.",
+            starterCode: "count = 3\nbonus = 1\nresult = count + bonus\noriginal_gate = True\nprint(result)\n",
+            referenceSolution: "count = 3\nbonus = 1\nresult = count * 2 + bonus\noriginal_gate = True\nprint(result)\n",
+            testCode: "assert result == 7\nassert original_gate is True\n", hints: ["Compare one item with two items."], effort: .init(), checkPlan: plan)
+        var assessment = exercise
+        assessment.id = "synthetic-readable-assessment"
+        let chapter = Chapter(id: "basics", title: "Readable checks", subtitle: "Synthetic fixtures", lesson: "# Counting\nDouble a count before adding a bonus.",
+            exercises: [exercise], assessment: assessment, quiz: [])
+        model.flushSave()
+        model = AppModel(store: model.store, chapters: [chapter])
+        model.selectMode(.practice)
+    }
+
+    @MainActor
+    func testNamedChecksRecordFailureCompletionAndNeverReuseStalePasses() async throws {
+        installReadableChecks()
+        model.runCode(test: true)
+        try await waitForRun()
+        XCTAssertEqual(model.checkOutcomes.map(\.status), [.passed, .failed, .notReached], model.output)
+        let failure = try XCTUnwrap(model.checkOutcomes.first { $0.id == "three" })
+        XCTAssertEqual(failure.expected, "7")
+        XCTAssertEqual(failure.actual, "4")
+        XCTAssertFalse(try XCTUnwrap(model.progress.attempts.last).testsPassed)
+        XCTAssertTrue(model.completedPracticeExerciseIDs.isEmpty)
+        XCTAssertEqual(model.progress.playerProgress.totalXP, 0)
+        let failed = model.checkOutcomes
+        model.code = model.exercise.referenceSolution
+        XCTAssertTrue(model.isOutputStale)
+        XCTAssertEqual(model.checkOutcomes, failed)
+        model.runCode(test: true)
+        XCTAssertTrue(model.checkOutcomes.isEmpty)
+        try await waitForRun()
+        XCTAssertEqual(model.checkOutcomes.map(\.status), [.passed, .passed, .passed], model.output)
+        XCTAssertTrue(try XCTUnwrap(model.progress.attempts.last).testsPassed)
+        XCTAssertTrue(model.completedPracticeExerciseIDs.contains(model.exercise.id))
+        XCTAssertGreaterThan(model.progress.playerProgress.totalXP, 0)
+        let xp = model.progress.playerProgress.totalXP
+        model.code = model.exercise.starterCode
+        XCTAssertTrue(model.isOutputStale)
+        model.runCode(test: true)
+        try await waitForRun()
+        XCTAssertFalse(try XCTUnwrap(model.progress.attempts.last).testsPassed)
+        XCTAssertEqual(model.progress.attempts.count, 3)
+        XCTAssertEqual(model.progress.playerProgress.totalXP, xp)
+    }
+
+    @MainActor
+    func testPracticeSubmitFlagCannotBypassNamedChecks() async throws {
+        installReadableChecks()
+        model.code = model.exercise.referenceSolution.replacingOccurrences(of: "result = count * 2 + bonus", with: "result = 7")
+        model.runCode(submit: true)
+        try await waitForRun()
+        XCTAssertFalse(try XCTUnwrap(model.progress.attempts.last).testsPassed)
+        XCTAssertEqual(model.checkOutcomes.first?.status, .failed)
+        XCTAssertTrue(model.completedPracticeExerciseIDs.isEmpty)
+        XCTAssertEqual(model.progress.playerProgress.totalXP, 0)
+    }
+
+    @MainActor
+    func testNamedChecksDoNotReplaceOriginalAssertionsAndClearOnOrdinaryRun() async throws {
+        installReadableChecks()
+        model.code = model.exercise.referenceSolution.replacingOccurrences(of: "original_gate = True", with: "original_gate = False")
+        model.runCode(test: true)
+        try await waitForRun()
+        XCTAssertEqual(model.checkOutcomes.map(\.status), [.passed, .passed, .passed], model.output)
+        XCTAssertEqual(model.solutionChecksPassed, false)
+        XCTAssertEqual(NamedCheckResultsView(outcomes: model.checkOutcomes, stale: false, overallPassed: model.solutionChecksPassed).overallLabel, "Solution checks did not pass")
+        XCTAssertFalse(try XCTUnwrap(model.progress.attempts.last).testsPassed)
+        XCTAssertTrue(model.completedPracticeExerciseIDs.isEmpty)
+        XCTAssertEqual(model.progress.playerProgress.totalXP, 0)
+        model.runCode()
+        XCTAssertTrue(model.checkOutcomes.isEmpty)
+        try await waitForRun()
+        XCTAssertTrue(model.checkOutcomes.isEmpty)
+        XCTAssertEqual(model.progress.attempts.count, 1)
+        XCTAssertNil(model.solutionChecksPassed)
+    }
+
+    @MainActor
+    func testNamedOutcomesAndScratchInputsResetOnRestoreNavigationAndRelaunch() throws {
+        installReadableChecks()
+        func seed() {
+            model.lastRunCode = model.code
+            model.checkOutcomes = [.init(id: "synthetic", title: "Synthetic failure", status: .failed, expected: "7", actual: "4")]
+            model.experimentInputs["count"] = "9"
+        }
+        func assertReset() {
+            XCTAssertTrue(model.checkOutcomes.isEmpty)
+            XCTAssertNil(model.lastRunCode)
+            XCTAssertNil(model.lastExperimentInputs)
+            XCTAssertEqual(model.experimentInputs, ["count": "3", "bonus": "1"])
+        }
+        seed()
+        model.resetDraft()
+        assertReset()
+        seed()
+        model.selectMode(.lesson)
+        assertReset()
+        seed()
+        model.selectExercise(model.exercise.id)
+        assertReset()
+        seed()
+        model.selectChapter(model.chapter.id)
+        assertReset()
+        seed()
+        model.flushSave()
+        let restored = AppModel(store: model.store, chapters: model.chapters)
+        XCTAssertTrue(restored.checkOutcomes.isEmpty)
+        XCTAssertNil(restored.lastRunCode)
+        XCTAssertNil(restored.lastExperimentInputs)
+        XCTAssertEqual(restored.experimentInputs, ["count": "3", "bonus": "1"])
+        restored.flushSave()
+    }
+
+    @MainActor
+    func testExperimentsNeverRecordAttemptsAwardXPOrMutateLearningStateAndDrafts() async throws {
+        installReadableChecks()
+        model.code = model.exercise.referenceSolution
+        model.reflection = "A synthetic reflection remains unchanged."
+        model.experimentInputs["count"] = "8"
+        model.flushSave()
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let before = try encoder.encode(model.progress)
+        let source = model.code
+        model.runExperiment()
+        XCTAssertTrue(model.running)
+        try await waitForRun()
+        XCTAssertEqual(model.code, source)
+        XCTAssertEqual(model.lastRunCode, source)
+        XCTAssertEqual(model.lastExperimentInputs, ["count": "8", "bonus": "1"])
+        XCTAssertTrue(model.output.contains("17"), model.output)
+        XCTAssertTrue(model.checkOutcomes.isEmpty)
+        XCTAssertTrue(model.feedback.contains("not a solution check"))
+        XCTAssertEqual(try encoder.encode(model.progress), before)
+        XCTAssertEqual(try encoder.encode(model.store.load()), before)
+        XCTAssertNil(model.rewardCelebration)
+        XCTAssertFalse(model.isOutputStale)
+        model.experimentInputs["count"] = "9"
+        XCTAssertTrue(model.isOutputStale)
+        XCTAssertEqual(model.lastExperimentInputs?["count"], "8")
+        XCTAssertNil(model.editorRevealRequest)
+        model.resetExperimentInputs()
+        XCTAssertEqual(model.experimentInputs, ["count": "3", "bonus": "1"])
+        XCTAssertTrue(model.isOutputStale)
+        model.runCode(test: true)
+        try await waitForRun()
+        XCTAssertNil(model.lastExperimentInputs)
+        XCTAssertEqual(model.checkOutcomes.map(\.status), [.passed, .passed, .passed], model.output)
+        XCTAssertTrue(try XCTUnwrap(model.progress.attempts.last).testsPassed)
+        XCTAssertEqual(model.progress.attempts.count, 1)
+    }
+
+    @MainActor
+    func testExperimentUsesCapturedSourceAndInputsWithoutOverwritingNewerEdits() async throws {
+        installReadableChecks()
+        model.code = model.exercise.referenceSolution
+        model.experimentInputs["count"] = "8"
+        let source = model.code
+        model.runExperiment()
+        model.code += "print('newer_source_marker')\n"
+        model.experimentInputs["count"] = "9"
+        let edited = model.code
+        try await waitForRun()
+        XCTAssertEqual(model.lastRunCode, source)
+        XCTAssertEqual(model.lastExperimentInputs, ["count": "8", "bonus": "1"])
+        XCTAssertTrue(model.output.contains("17"), model.output)
+        XCTAssertFalse(model.output.contains("newer_source_marker"))
+        XCTAssertEqual(model.code, edited)
+        XCTAssertEqual(model.progress.drafts[model.draftKey], edited)
+        XCTAssertTrue(model.isOutputStale)
+        XCTAssertTrue(model.feedback.contains("earlier version"))
+        XCTAssertTrue(model.progress.attempts.isEmpty)
+        XCTAssertEqual(model.progress.playerProgress.totalXP, 0)
+    }
+
+    @MainActor
+    func testExperimentInputEditsInvalidateDiagnosticNavigationWithoutChangingSource() async throws {
+        installReadableChecks()
+        model.code = "count = 3\nbonus = 1\nresult = 10 / count\n"
+        model.experimentInputs["count"] = "0"
+        model.runExperiment()
+        try await waitForRun()
+        XCTAssertEqual(model.lastRunDiagnostic?.exceptionType, "ZeroDivisionError", model.output)
+        XCTAssertEqual(model.diagnosticLine, 3)
+        model.revealDiagnosticLine()
+        XCTAssertNotNil(model.editorRevealRequest)
+        let output = model.output
+        let source = model.code
+        model.experimentInputs["count"] = "2"
+        XCTAssertEqual(model.code, source)
+        XCTAssertEqual(model.output, output)
+        XCTAssertTrue(model.isOutputStale)
+        XCTAssertNil(model.editorRevealRequest)
+        XCTAssertNil(model.diagnosticLine)
+        XCTAssertNil(model.diagnosticGuidance)
+        model.revealDiagnosticLine()
+        XCTAssertNil(model.editorRevealRequest)
+        XCTAssertTrue(model.progress.attempts.isEmpty)
+        XCTAssertEqual(model.progress.playerProgress.totalXP, 0)
+    }
+
+    @MainActor
+    func testExperimentInvalidInputsAndInterpreterSetupFailureNeverReuseSuccess() async throws {
+        installReadableChecks()
+        model.code = model.exercise.referenceSolution
+        model.runCode(test: true)
+        try await waitForRun()
+        XCTAssertEqual(model.checkOutcomes.map(\.status), [.passed, .passed, .passed], model.output)
+        let attempts = model.progress.attempts.count
+        let xp = model.progress.playerProgress.totalXP
+        for literal in ["", "1 + 2", "__import__('os')", String(repeating: "1", count: AuthoredCheckPlan.maximumLiteralBytes + 1)] {
+            model.experimentInputs["count"] = literal
+            model.runExperiment()
+            XCTAssertTrue(model.checkOutcomes.isEmpty)
+            try await waitForRun()
+            XCTAssertTrue(model.feedback.contains("did not complete"), "\(literal.prefix(20)): \(model.output)")
+            XCTAssertNil(model.lastRunCode)
+            XCTAssertNil(model.lastRunDiagnostic)
+            XCTAssertNil(model.lastExperimentInputs)
+            XCTAssertNil(model.editorRevealRequest)
+            XCTAssertEqual(model.progress.attempts.count, attempts)
+            XCTAssertEqual(model.progress.playerProgress.totalXP, xp)
+        }
+        model.resetExperimentInputs()
+        XCTAssertTrue(model.isOutputStale)
+        model.progress.pythonPath = "/missing/synthetic/python3"
+        model.runExperiment()
+        try await waitForRun()
+        XCTAssertTrue(model.feedback.contains("did not complete"))
+        XCTAssertNil(model.lastRunCode)
+        XCTAssertTrue(model.checkOutcomes.isEmpty)
+        XCTAssertEqual(model.progress.attempts.count, attempts)
+        model.runCode(test: true)
+        try await waitForRun()
+        XCTAssertTrue(model.checkOutcomes.isEmpty)
+        XCTAssertEqual(model.progress.attempts.count, attempts)
+        XCTAssertEqual(model.progress.playerProgress.totalXP, xp)
+    }
+
+    @MainActor
+    func testExperimentChangedInputDeclarationsFailWithoutExecutingOrChangingDraft() async throws {
+        installReadableChecks()
+        for source in [
+            model.exercise.referenceSolution.replacingOccurrences(of: "count = 3", with: "count = 9"),
+            model.exercise.referenceSolution.replacingOccurrences(of: "count = 3\n", with: ""),
+            model.exercise.referenceSolution + "count = 3\n"
+        ] {
+            model.code = source
+            model.flushSave()
+            model.runExperiment()
+            try await waitForRun()
+            XCTAssertTrue(model.feedback.contains("did not complete"), model.output)
+            XCTAssertEqual(model.code, source)
+            XCTAssertEqual(try model.store.load().drafts[model.draftKey], source)
+            XCTAssertNil(model.lastRunDiagnostic)
+            XCTAssertNil(model.diagnosticLine)
+            XCTAssertTrue(model.checkOutcomes.isEmpty)
+            XCTAssertTrue(model.progress.attempts.isEmpty)
+            XCTAssertEqual(model.progress.playerProgress.totalXP, 0)
+        }
+    }
+
+    @MainActor
+    func testExperimentCancellationBusyAndAssessmentGuards() async throws {
+        installReadableChecks()
+        model.code = "count = 3\nbonus = 1\nwhile True:\n    pass\n"
+        let source = model.code
+        model.runExperiment()
+        XCTAssertTrue(model.running)
+        let inputs = model.experimentInputs
+        model.resetExperimentInputs()
+        model.runExperiment()
+        model.runCode(test: true)
+        model.selectMode(.assessment)
+        XCTAssertEqual(model.mode, .practice)
+        XCTAssertEqual(model.experimentInputs, inputs)
+        try await Task.sleep(for: .milliseconds(150))
+        model.cancelWork()
+        try await waitForRun()
+        XCTAssertTrue(model.feedback.lowercased().contains("cancelled"), model.feedback)
+        XCTAssertEqual(model.code, source)
+        XCTAssertTrue(model.progress.attempts.isEmpty)
+        XCTAssertEqual(model.progress.playerProgress.totalXP, 0)
+        model.selectMode(.assessment)
+        XCTAssertNotNil(model.exercise.checkPlan)
+        XCTAssertNil(model.experimentPlan)
+        XCTAssertTrue(model.experimentInputs.isEmpty)
+        let output = model.output
+        model.runExperiment()
+        XCTAssertFalse(model.running)
+        XCTAssertEqual(model.output, output)
+        model.code = "result = 7\noriginal_gate = True\n"
+        model.reflection = "Synthetic independent assessment."
+        model.runCode(test: true, submit: true)
+        try await waitForRun()
+        XCTAssertTrue(try XCTUnwrap(model.progress.attempts.last).testsPassed, model.output)
+        XCTAssertEqual(model.progress.attempts.last?.mode, .assessment)
+        XCTAssertTrue(model.checkOutcomes.isEmpty)
+        XCTAssertNil(model.lastExperimentInputs)
+        XCTAssertNil(model.diagnosticGuidance)
+    }
+
+    @MainActor
+    func testExperimentsExcludedFromLockedAndUndeclaredWorkspacesButAvailableInLearn() async throws {
+        XCTAssertNil(model.experimentPlan)
+        let originalOutput = model.output
+        model.runExperiment()
+        XCTAssertFalse(model.running)
+        XCTAssertEqual(model.output, originalOutput)
+        model.selectChapter("decisions")
+        XCTAssertFalse(model.isUnlocked)
+        XCTAssertNil(model.experimentPlan)
+        model.runExperiment()
+        XCTAssertFalse(model.running)
+        installReadableChecks()
+        model.selectMode(.lesson)
+        XCTAssertNotNil(model.experimentPlan)
+        model.code = model.exercise.referenceSolution
+        model.runExperiment()
+        try await waitForRun()
+        XCTAssertTrue(model.progress.attempts.isEmpty)
+        XCTAssertTrue(model.progress.lessonCompletions.isEmpty)
+        XCTAssertEqual(model.progress.playerProgress.totalXP, 0)
+        XCTAssertNotNil(model.lastExperimentInputs)
+    }
+
+    @MainActor
+    func testRunDiagnosticTracksFailuresEditsAndSuccessfulReruns() async throws {
+        model.selectMode(.practice)
+        model.code = "print(missing_name)\n"
+        model.runCode()
+        try await waitForRun()
+        let diagnostic = try XCTUnwrap(model.lastRunDiagnostic)
+        XCTAssertEqual(diagnostic.exceptionType, "NameError")
+        XCTAssertEqual(diagnostic.origin, .learner)
+        XCTAssertEqual(model.diagnosticLine, 1)
+        XCTAssertNotNil(model.diagnosticGuidance)
+        XCTAssertTrue(model.output.contains("NameError"))
+        model.revealDiagnosticLine()
+        let first = try XCTUnwrap(model.editorRevealRequest)
+        model.revealDiagnosticLine()
+        XCTAssertNotEqual(model.editorRevealRequest?.id, first.id)
+        XCTAssertEqual(first.sourceIdentity, model.draftKey)
+        XCTAssertEqual(first.source, model.lastRunCode)
+        model.code = "print('fixed')\n"
+        XCTAssertTrue(model.isOutputStale)
+        XCTAssertEqual(model.lastRunDiagnostic, diagnostic)
+        XCTAssertNil(model.editorRevealRequest)
+        XCTAssertNil(model.diagnosticLine)
+        XCTAssertNil(model.diagnosticGuidance)
+        let staleCard = RunFailureCard(diagnostic: diagnostic, assessment: false, stale: true,
+                                       guidance: "outdated guidance", navigableLine: nil, reveal: {})
+        XCTAssertNil(staleCard.displayedGuidance)
+        XCTAssertNotNil(staleCard.displayedMessage)
+        model.revealDiagnosticLine()
+        XCTAssertNil(model.editorRevealRequest)
+        model.runCode()
+        XCTAssertNil(model.lastRunDiagnostic)
+        try await waitForRun()
+        XCTAssertNil(model.lastRunDiagnostic)
+        XCTAssertFalse(model.isOutputStale)
+        XCTAssertEqual(model.output.trimmingCharacters(in: .whitespacesAndNewlines), "fixed")
+        model.code = "raise ValueError('synthetic failure')\n"
+        model.runCode()
+        try await waitForRun()
+        XCTAssertEqual(model.lastRunDiagnostic?.exceptionType, "ValueError")
+        XCTAssertEqual(model.lastRunCode, model.code)
+    }
+
+    @MainActor
+    func testRunDiagnosticClearsOnResetNavigationAndRelaunch() throws {
+        func seed() {
+            model.lastRunCode = model.code
+            model.lastRunDiagnostic = RunDiagnostic(exceptionType: "NameError", message: "synthetic", origin: .learner,
+                                                     frames: [.init(line: 1, function: "<module>")])
+            model.revealDiagnosticLine()
+            XCTAssertNotNil(model.editorRevealRequest)
+        }
+        func assertCleared() {
+            XCTAssertNil(model.lastRunDiagnostic)
+            XCTAssertNil(model.lastRunCode)
+            XCTAssertNil(model.editorRevealRequest)
+        }
+        seed()
+        model.resetDraft()
+        assertCleared()
+        seed()
+        model.selectMode(.practice)
+        assertCleared()
+        seed()
+        model.selectExercise(model.exercises[1].id)
+        assertCleared()
+        seed()
+        model.selectChapter("basics")
+        assertCleared()
+        seed()
+        model.flushSave()
+        let restored = AppModel(store: model.store)
+        XCTAssertEqual(restored.code, model.code)
+        XCTAssertNil(restored.lastRunDiagnostic)
+        XCTAssertNil(restored.lastRunCode)
+        XCTAssertNil(restored.editorRevealRequest)
+        restored.flushSave()
+    }
+
+    @MainActor
+    func testRunDiagnosticClearsOnInterpreterSetupFailure() async throws {
+        model.lastRunCode = model.code
+        model.lastRunDiagnostic = RunDiagnostic(exceptionType: "SyntaxError", message: "synthetic", origin: .learner,
+                                                 frames: [.init(line: 1, function: "<module>")])
+        model.revealDiagnosticLine()
+        model.progress.pythonPath = "/nonexistent/python-teacher-test-python"
+        model.runCode()
+        try await waitForRun()
+        XCTAssertNil(model.lastRunDiagnostic)
+        XCTAssertNil(model.lastRunCode)
+        XCTAssertNil(model.editorRevealRequest)
+        XCTAssertNil(model.diagnosticGuidance)
+        XCTAssertNil(model.diagnosticLine)
+        XCTAssertFalse(model.output.isEmpty)
+        XCTAssertTrue(model.feedback.contains("Execution could not complete"))
+    }
+
+    @MainActor
+    func testDiagnosticGuidanceIsLocalFreshAndNeverShownInAssessments() {
+        let types = ["SyntaxError", "IndentationError", "TabError", "NameError", "UnboundLocalError", "TypeError",
+                     "ValueError", "IndexError", "KeyError", "AttributeError", "ZeroDivisionError", "AssertionError", "RuntimeError"]
+        for mode in LearningMode.allCases {
+            model.selectMode(mode)
+            model.code = "print('synthetic')\n"
+            model.lastRunCode = model.code
+            for type in types {
+                let diagnostic = RunDiagnostic(exceptionType: type, message: "synthetic exception message", origin: .learner,
+                                               frames: [.init(line: 1, function: "<module>")])
+                model.lastRunDiagnostic = diagnostic
+                XCTAssertEqual(model.diagnosticGuidance == nil, mode == .assessment, type)
+                XCTAssertEqual(model.diagnosticLine, 1)
+                let card = RunFailureCard(diagnostic: diagnostic, assessment: mode == .assessment, stale: false,
+                                          guidance: "must not appear in assessment", navigableLine: 1, reveal: {})
+                XCTAssertEqual(card.displayedGuidance == nil, mode == .assessment)
+                XCTAssertEqual(card.displayedMessage == nil, mode == .assessment)
+            }
+        }
+        model.selectMode(.practice)
+        model.code = "print('synthetic')\n"
+        model.lastRunCode = model.code
+        for origin in [RunDiagnostic.Origin.checks, .runner] {
+            model.lastRunDiagnostic = RunDiagnostic(exceptionType: "AssertionError", message: "synthetic", origin: origin,
+                                                     frames: [.init(line: 1, function: "<module>")])
+            XCTAssertNil(model.diagnosticGuidance)
+            XCTAssertNil(model.diagnosticLine)
+            model.revealDiagnosticLine()
+            XCTAssertNil(model.editorRevealRequest)
+        }
+        for line in [0, -1, 3, Int.max] {
+            model.lastRunDiagnostic = RunDiagnostic(exceptionType: "NameError", message: "synthetic", origin: .learner,
+                                                     frames: [.init(line: line, function: "<module>")])
+            XCTAssertNil(model.diagnosticLine)
+        }
+        XCTAssertTrue(model.messages.isEmpty)
+        XCTAssertEqual(model.hintCount, 0)
+        XCTAssertEqual(model.requestCount, 0)
+    }
+
+    @MainActor
     func testEditsAfterPassingDoNotReuseStaleResults() async throws {
         model.selectMode(.practice)
         model.code = model.exercise.referenceSolution
@@ -1480,6 +2152,166 @@ final class AppModelTests: XCTestCase {
         model.askTeacher("Can you see the change?")
         try await waitForGeneration()
         XCTAssertEqual(model.messages.last?.role, "assistant")
+    }
+
+    @MainActor
+    func testTeacherExperimentSnapshotsPreserveExactOverridesDefaultsAndStaleContext() async throws {
+        installReadableChecks()
+        var snapshots: [[String: Any]] = []
+        let session = mockTeacherSession { snapshots.append($0) }
+        defer { session.invalidateAndCancel() }
+        model.selectMode(.lesson)
+        model.code = model.exercise.referenceSolution
+        let source = model.code
+        model.experimentInputs = ["count": "8 "]
+        model.runExperiment()
+        try await waitForRun()
+        model.askTeacher("Explain the observation, not completion.")
+        try await waitForGeneration()
+        var run = try XCTUnwrap(snapshots.last?["latestRun"] as? [String: Any])
+        XCTAssertEqual(run["operation"] as? String, "Experiment")
+        XCTAssertEqual(run["code"] as? String, source)
+        XCTAssertEqual(run["inputOverrides"] as? [String: String], ["count": "8 ", "bonus": "1"])
+        XCTAssertEqual(run["output"] as? String, model.output)
+        XCTAssertEqual(run["exitCode"] as? Int, 0)
+        XCTAssertNil(run["checksPassed"])
+        XCTAssertNil(run["checkOutcomes"])
+        XCTAssertTrue((snapshots.last?["runStatus"] as? String)?.contains("current code and inputs") == true)
+        let runID = run["id"] as? String
+        model.experimentInputs["count"] = "9"
+        model.askTeacher("What has actually been run?")
+        try await waitForGeneration()
+        run = try XCTUnwrap(snapshots.last?["latestRun"] as? [String: Any])
+        XCTAssertEqual(run["id"] as? String, runID)
+        XCTAssertEqual(run["inputOverrides"] as? [String: String], ["count": "8 ", "bonus": "1"])
+        XCTAssertEqual(snapshots.last?["currentExperimentInputs"] as? [String: String], ["count": "9", "bonus": "1"])
+        XCTAssertTrue((snapshots.last?["runStatus"] as? String)?.contains("older code or inputs") == true)
+        XCTAssertEqual(snapshots.last?["codeChange"] as? String, "Unchanged since previous teacher request")
+        XCTAssertEqual(model.code, source)
+        XCTAssertTrue(model.progress.attempts.isEmpty)
+        XCTAssertEqual(model.progress.playerProgress.totalXP, 0)
+        XCTAssertEqual(model.hintCount, 0)
+        model.experimentInputs["count"] = ""
+        model.runExperiment()
+        try await waitForRun()
+        model.askTeacher("Why could this experiment not start?")
+        try await waitForGeneration()
+        run = try XCTUnwrap(snapshots.last?["latestRun"] as? [String: Any])
+        XCTAssertEqual(run["operation"] as? String, "Experiment")
+        XCTAssertEqual(run["outcome"] as? String, "Execution could not complete")
+        XCTAssertEqual(run["inputOverrides"] as? [String: String], ["count": "", "bonus": "1"])
+        XCTAssertTrue((snapshots.last?["runStatus"] as? String)?.contains("did not complete") == true)
+        XCTAssertFalse((snapshots.last?["runStatus"] as? String)?.contains("belongs to current code and inputs") == true)
+        XCTAssertNil(run["checksPassed"])
+        XCTAssertNil(run["exitCode"])
+        model.selectMode(.practice)
+        model.code = model.exercise.referenceSolution
+        model.runCode(test: true)
+        try await waitForRun()
+        model.askTeacher("Explain the named checks.")
+        try await waitForGeneration()
+        run = try XCTUnwrap(snapshots.last?["latestRun"] as? [String: Any])
+        XCTAssertEqual(run["operation"] as? String, "Check solution")
+        XCTAssertEqual(run["checksPassed"] as? Bool, true)
+        XCTAssertNil(run["inputOverrides"])
+        let outcomes = try XCTUnwrap(run["checkOutcomes"] as? [[String: Any]])
+        XCTAssertEqual(outcomes.compactMap { $0["status"] as? String }, ["passed", "passed", "passed"])
+        XCTAssertTrue((run["output"] as? String)?.contains("count = 5") == true)
+    }
+
+    @MainActor
+    func testTeacherDropsReplyIfOnlyExperimentInputsChangeDuringRequest() async throws {
+        installReadableChecks()
+        let session = mockTeacherSession { _ in }
+        defer { session.invalidateAndCancel() }
+        model.askTeacher("Inspect the current scratch inputs.")
+        model.experimentInputs["count"] = "6"
+        try await waitForGeneration()
+        XCTAssertEqual(model.messages.map(\.role), ["user"])
+        XCTAssertTrue(model.notice?.contains("outdated reply was not added") == true)
+        XCTAssertEqual(model.requestCount, 1)
+    }
+
+    @MainActor
+    func testTeacherSnapshotIncludesOnlyResolvedReviewedPracticeDesignOnExplicitRequest() async throws {
+        var snapshots: [[String: Any]] = []
+        let session = mockTeacherSession { snapshots.append($0) }
+        defer { session.invalidateAndCancel() }
+        model.selectMode(.practice)
+        let guide = try XCTUnwrap(model.practiceGuide)
+        XCTAssertEqual(model.requestCount, 0)
+        XCTAssertEqual(model.hintCount, 0)
+        XCTAssertTrue(snapshots.isEmpty)
+        model.askTeacher("Which taught skills could I use?")
+        try await waitForGeneration()
+        XCTAssertEqual(snapshots.count, 1)
+        let snapshot = try XCTUnwrap(snapshots.last)
+        let profile = try XCTUnwrap(snapshot["practiceProfile"] as? [String: Any])
+        XCTAssertEqual(profile["form"] as? String, guide.form.rawValue)
+        XCTAssertEqual(profile["scaffolding"] as? String, guide.scaffolding.rawValue)
+        XCTAssertEqual(profile["skillTitles"] as? [String], guide.skillTitles)
+        XCTAssertEqual(profile["reflectionPrompts"] as? [String], guide.reflectionPrompts)
+        XCTAssertEqual(profile["purpose"] as? String, guide.purpose)
+        XCTAssertEqual(snapshot["currentCode"] as? String, model.code)
+        XCTAssertNil(snapshot["testCode"])
+        XCTAssertNil(snapshot["referenceSolution"])
+        XCTAssertEqual(model.requestCount, 1)
+        XCTAssertEqual(model.hintCount, 1)
+        model.revealSolution()
+        model.askTeacher("Explain the task design without revealing its solution.")
+        try await waitForGeneration()
+        XCTAssertNil(snapshots.last?["referenceSolution"])
+        XCTAssertFalse(model.teacherHistory.contains { $0.text.contains("Reference solution") })
+        var generated = model.exercise
+        generated.id = "generated-synthetic-profile-is-not-authority"
+        model.progress.generatedExercises[model.chapter.id] = [generated]
+        model.selectExercise(generated.id)
+        XCTAssertNil(model.practiceGuide)
+        model.askTeacher("Read this saved practice task.")
+        try await waitForGeneration()
+        XCTAssertNil(snapshots.last?["practiceProfile"])
+        generated.practiceProfile = nil
+        model.progress.generatedExercises[model.chapter.id] = [generated]
+        model.askTeacher("Read the unprofiled practice task.")
+        try await waitForGeneration()
+        XCTAssertNil(snapshots.last?["practiceProfile"])
+        model.selectChapter("decisions")
+        model.overrideUnlock()
+        let legacy = try XCTUnwrap(Curriculum.legacyExercises(chapterID: "decisions", mode: .practice).first)
+        model.progress.drafts["decisions:practice:\(legacy.id)"] = legacy.starterCode
+        model.selectExercise(legacy.id)
+        model.askTeacher("Read my saved legacy task.")
+        try await waitForGeneration()
+        XCTAssertNil(snapshots.last?["practiceProfile"])
+        let count = snapshots.count
+        let requests = model.requestCount
+        let hints = model.progress.hintCounts
+        model.selectMode(.assessment)
+        XCTAssertNil(model.practiceGuide)
+        model.askTeacher("Do not send assessment metadata.")
+        XCTAssertEqual(snapshots.count, count)
+        XCTAssertEqual(model.requestCount, requests)
+        XCTAssertEqual(model.progress.hintCounts, hints)
+        XCTAssertFalse(model.teacherBusy)
+    }
+
+    @MainActor
+    func testProfileReflectionPromptsDoNotAddPracticeGradingRules() async throws {
+        model.selectExercise("basics-transfer-delivery-note")
+        XCTAssertNotNil(model.practiceGuide)
+        model.reflection = ""
+        model.code = model.exercise.referenceSolution
+        model.runCode(test: true)
+        try await waitForRun()
+        XCTAssertEqual(model.progress.attempts.last?.testsPassed, true)
+        XCTAssertEqual(model.progress.attempts.last?.reflection, "")
+        XCTAssertEqual(model.hintCount, 0)
+        XCTAssertTrue(model.progress.masteredChapterIDs.isEmpty)
+        model.reflection = "A short personal note."
+        model.runCode(test: true)
+        try await waitForRun()
+        XCTAssertEqual(model.progress.attempts.last?.testsPassed, true)
+        XCTAssertEqual(model.progress.attempts.last?.reflection, "A short personal note.")
     }
 
     @MainActor
@@ -1664,7 +2496,7 @@ final class AppModelTests: XCTestCase {
         }
         model = AppModel(store: model.store, cloudConsent: true, teacherClientProvider: {
             TeacherClient(apiKey: "test-not-a-real-key", model: "test-model", session: session)
-        })
+        }, chapters: model.chapters)
         return session
     }
 
@@ -1932,6 +2764,128 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(editor.selectedRange(), NSRange(location: 10, length: 0))
     }
 
+    func testEditorRevealLineRangesUseUTF16AndHandleBlankFinalAndInvalidLines() {
+        let source = "name = '𐐀e\u{301}'\r\n\r\nprint(name)\n"
+        let firstLength = "name = '𐐀e\u{301}'".utf16.count
+        XCTAssertEqual(EditorRevealRequest.lineRange(1, in: source), NSRange(location: 0, length: firstLength))
+        XCTAssertEqual(EditorRevealRequest.lineRange(2, in: source), NSRange(location: firstLength + 2, length: 0))
+        XCTAssertEqual(EditorRevealRequest.lineRange(3, in: source), NSRange(location: firstLength + 4, length: 11))
+        XCTAssertEqual(EditorRevealRequest.lineRange(4, in: source), NSRange(location: source.utf16.count, length: 0))
+        XCTAssertEqual(EditorRevealRequest.lineRange(1, in: ""), NSRange(location: 0, length: 0))
+        XCTAssertNil(EditorRevealRequest.lineRange(2, in: ""))
+        XCTAssertEqual(EditorRevealRequest.lineRange(2, in: "a\rb"), NSRange(location: 2, length: 1))
+        XCTAssertEqual(EditorRevealRequest.lineRange(1, in: "a\u{2028}b"), NSRange(location: 0, length: 3))
+        for line in [-1, 0, 5, Int.max] { XCTAssertNil(EditorRevealRequest.lineRange(line, in: source)) }
+    }
+
+    @MainActor
+    func testHostedEditorExplicitRevealRepeatsScrollsAndPreservesTextAndUndo() async throws {
+        _ = NSApplication.shared
+        let original = "name = '𐐀café'\n\n" + String(repeating: "print(name)\n", count: 100)
+        model.code = original
+        let binding = Binding(get: { self.model.code }, set: { self.model.code = $0 })
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 400), styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let hosting = NSHostingView(rootView: CodeEditor(text: binding, sourceIdentity: "draft"))
+        window.contentView = hosting
+        window.orderFront(nil)
+        defer { window.close() }
+        try await Task.sleep(for: .milliseconds(100))
+        func descendants(of view: NSView) -> [NSView] { view.subviews.flatMap { [$0] + descendants(of: $0) } }
+        let editor = try XCTUnwrap(descendants(of: hosting).compactMap { $0 as? PythonTextView }.first)
+        XCTAssertTrue(window.makeFirstResponder(editor))
+        let undo = try XCTUnwrap(editor.undoManager)
+        undo.beginUndoGrouping()
+        editor.insertText("print('final')", replacementRange: NSRange(location: original.utf16.count, length: 0))
+        undo.endUndoGrouping()
+        let source = model.code
+        XCTAssertTrue(undo.canUndo)
+        XCTAssertTrue(window.makeFirstResponder(window))
+        let responder = window.firstResponder
+        hosting.rootView = CodeEditor(text: binding, sourceIdentity: "draft")
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertTrue(window.firstResponder === responder, "Ordinary updates must not focus the editor")
+        let storage = try XCTUnwrap(editor.textStorage)
+        let originalStorage = NSAttributedString(attributedString: storage)
+        let lastRange = try XCTUnwrap(EditorRevealRequest.lineRange(103, in: source))
+        var previousID: UUID?
+        for _ in 0..<2 {
+            editor.setSelectedRange(NSRange(location: 0, length: 0))
+            editor.scrollRangeToVisible(editor.selectedRange())
+            let request = EditorRevealRequest(sourceIdentity: "draft", source: source, line: 103)
+            XCTAssertNotEqual(request.id, previousID)
+            previousID = request.id
+            hosting.rootView = CodeEditor(text: binding, sourceIdentity: "draft", revealRequest: request)
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertEqual(editor.selectedRange(), lastRange)
+            XCTAssertTrue(window.firstResponder === editor)
+            let layout = try XCTUnwrap(editor.layoutManager)
+            let container = try XCTUnwrap(editor.textContainer)
+            let rect = layout.boundingRect(forGlyphRange: layout.glyphRange(forCharacterRange: lastRange, actualCharacterRange: nil), in: container)
+                .offsetBy(dx: editor.textContainerOrigin.x, dy: editor.textContainerOrigin.y)
+            XCTAssertTrue(editor.visibleRect.intersects(rect))
+            editor.setSelectedRange(NSRange(location: 0, length: 0))
+            hosting.rootView = CodeEditor(text: binding, sourceIdentity: "draft", revealRequest: request)
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertEqual(editor.selectedRange(), NSRange(location: 0, length: 0), "A consumed request must not replay on updates")
+        }
+        for line in [1, 2, 103] {
+            hosting.rootView = CodeEditor(text: binding, sourceIdentity: "draft",
+                                          revealRequest: EditorRevealRequest(sourceIdentity: "draft", source: source, line: line))
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertEqual(editor.selectedRange(), EditorRevealRequest.lineRange(line, in: source))
+        }
+        for request in [EditorRevealRequest(sourceIdentity: "draft", source: source, line: 0),
+                        EditorRevealRequest(sourceIdentity: "draft", source: source, line: Int.max),
+                        EditorRevealRequest(sourceIdentity: "old-draft", source: source, line: 1),
+                        EditorRevealRequest(sourceIdentity: "draft", source: original, line: 1)] {
+            let selection = editor.selectedRange()
+            hosting.rootView = CodeEditor(text: binding, sourceIdentity: "draft", revealRequest: request)
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertEqual(editor.selectedRange(), selection)
+        }
+        XCTAssertTrue(storage.isEqual(to: originalStorage))
+        XCTAssertEqual(editor.string, source)
+        XCTAssertEqual(model.code, source)
+        XCTAssertFalse(undo.canRedo)
+        undo.undo()
+        XCTAssertEqual(editor.string, original, "Reveal must neither add undo entries nor erase existing undo")
+        XCTAssertEqual(model.code, original)
+        hosting.rootView = CodeEditor(text: binding, sourceIdentity: "draft",
+                                      revealRequest: EditorRevealRequest(sourceIdentity: "draft", source: original, line: 103))
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(editor.selectedRange(), NSRange(location: original.utf16.count, length: 0))
+        XCTAssertTrue(undo.canRedo)
+        undo.redo()
+        XCTAssertEqual(editor.string, source)
+    }
+
+    @MainActor
+    func testEditorRevealPreservesMarkedTextAndNeverDefersItsJump() throws {
+        _ = NSApplication.shared
+        var code = "label = \nprint(label)\n"
+        let binding = Binding(get: { code }, set: { code = $0 })
+        let request = EditorRevealRequest(sourceIdentity: "draft", source: code, line: 2)
+        let coordinator = CodeEditor(text: binding, sourceIdentity: "draft", revealRequest: request).makeCoordinator()
+        let editor = PythonTextView(frame: NSRect(x: 0, y: 0, width: 400, height: 300))
+        editor.string = code
+        editor.setSelectedRange(NSRange(location: 8, length: 0))
+        editor.setMarkedText("é", selectedRange: NSRange(location: 1, length: 0), replacementRange: NSRange(location: NSNotFound, length: 0))
+        let storage = try XCTUnwrap(editor.textStorage)
+        let before = NSAttributedString(attributedString: storage)
+        let selection = editor.selectedRange()
+        let marked = editor.markedRange()
+        coordinator.reveal(in: editor)
+        XCTAssertTrue(storage.isEqual(to: before))
+        XCTAssertEqual(editor.markedRange(), marked)
+        XCTAssertEqual(editor.selectedRange(), selection)
+        editor.insertText("", replacementRange: editor.markedRange())
+        editor.setSelectedRange(NSRange(location: 0, length: 0))
+        XCTAssertEqual(editor.string, code)
+        coordinator.reveal(in: editor)
+        XCTAssertEqual(editor.selectedRange(), NSRange(location: 0, length: 0))
+    }
+
     @MainActor
     func testHostedEditorFindCommandsNavigateWithoutChangingDraft() async throws {
         _ = NSApplication.shared
@@ -2042,6 +2996,224 @@ final class AppModelTests: XCTestCase {
         image.lockFocus()
         ruler.drawHashMarksAndLabels(in: NSRect(x: 0, y: 0, width: 48, height: 300))
         image.unlockFocus()
+    }
+
+    @MainActor
+    func testNativeFailureCardsRenderAtDefaultAndMinimumSizesWithoutShrinkingEditor() async throws {
+        _ = NSApplication.shared
+        for size in [NSSize(width: 1380, height: 900), NSSize(width: 1080, height: 740)] {
+            let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            let hosting = NSHostingView(rootView: WorkspaceView().environmentObject(model))
+            window.contentView = hosting
+            window.orderFront(nil)
+            defer { window.close() }
+            func descendants(of view: NSView) -> [NSView] { view.subviews.flatMap { [$0] + descendants(of: $0) } }
+            for mode in LearningMode.allCases {
+                model.selectMode(mode)
+                model.code = "def read_count():\n    return int('not a number')\n\nread_count()\n"
+                try await Task.sleep(for: .milliseconds(200))
+                hosting.layoutSubtreeIfNeeded()
+                let editor = try XCTUnwrap(descendants(of: hosting).compactMap { $0 as? PythonTextView }.first)
+                let scroll = try XCTUnwrap(editor.enclosingScrollView)
+                let baselineHeight = scroll.frame.height
+                let baselineWidth = scroll.frame.width
+                model.lastRunCode = model.code
+                model.lastRunDiagnostic = RunDiagnostic(exceptionType: "ValueError", message: "invalid literal for int() with base 10: 'not a number'",
+                                                         origin: .learner, frames: [.init(line: 4, function: "<module>"), .init(line: 2, function: "read_count")])
+                model.output = "Traceback (most recent call last):\n  File \"main.py\", line 4, in <module>\n    read_count()\n  File \"main.py\", line 2, in read_count\n    return int('not a number')\nValueError: invalid literal for int() with base 10: 'not a number'"
+                let originalOutput = model.output
+                let selection = editor.selectedRange()
+                try await Task.sleep(for: .milliseconds(200))
+                hosting.layoutSubtreeIfNeeded()
+                XCTAssertEqual(scroll.frame.height, baselineHeight, accuracy: 1, "The supplementary card must not take height from the editor")
+                XCTAssertEqual(scroll.frame.width, baselineWidth, accuracy: 1)
+                XCTAssertEqual(editor.selectedRange(), selection, "Receiving diagnostics must not navigate automatically")
+                XCTAssertEqual(model.output, originalOutput)
+                let bitmap = try XCTUnwrap(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds))
+                hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
+                XCTAssertGreaterThanOrEqual(bitmap.pixelsWide, Int(size.width))
+                XCTAssertGreaterThanOrEqual(bitmap.pixelsHigh, Int(size.height))
+                let name = "failure-\(mode.rawValue.lowercased())-\(Int(size.width))"
+                try saveSnapshot(of: hosting, name: name)
+                if mode == .practice {
+                    model.code += "\n"
+                    try await Task.sleep(for: .milliseconds(150))
+                    hosting.layoutSubtreeIfNeeded()
+                    XCTAssertNil(model.diagnosticLine)
+                    XCTAssertNil(model.diagnosticGuidance)
+                    XCTAssertEqual(model.output, originalOutput)
+                    XCTAssertEqual(scroll.frame.height, baselineHeight, accuracy: 1)
+                    try saveSnapshot(of: hosting, name: name + "-stale")
+                }
+            }
+        }
+    }
+
+    @MainActor
+    func testReadableCheckStatusLabelsAreLearnerFacing() {
+        XCTAssertEqual(NamedCheckOutcomeRow(outcome: .init(id: "p", title: "Passing case", status: .passed)).statusLabel, "Passed")
+        XCTAssertEqual(NamedCheckOutcomeRow(outcome: .init(id: "f", title: "Failing case", status: .failed)).statusLabel, "Failed")
+        XCTAssertEqual(NamedCheckOutcomeRow(outcome: .init(id: "n", title: "Later case", status: .notReached)).statusLabel, "Not reached")
+    }
+
+    @MainActor
+    func testNativeReadableChecksRenderAtDefaultAndMinimumSizesWithoutShrinkingEditor() async throws {
+        _ = NSApplication.shared
+        installReadableChecks()
+        let outcomes: [CheckOutcome] = [
+            .init(id: "empty", title: "No items still includes the bonus", status: .passed, expected: "1", actual: "1"),
+            .init(id: "three", title: "Three items count twice", status: .failed, expected: "7", actual: "4", detail: "The observed value did not match the expected value and type."),
+            .init(id: "five", title: "Five items count twice", status: .notReached, detail: "An earlier case did not pass.")
+        ]
+        for size in [NSSize(width: 1380, height: 900), NSSize(width: 1080, height: 740)] {
+            let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            let hosting = NSHostingView(rootView: WorkspaceView().environmentObject(model))
+            window.contentView = hosting
+            window.orderFront(nil)
+            defer { window.close() }
+            func descendants(_ view: NSView) -> [NSView] { view.subviews.flatMap { [$0] + descendants($0) } }
+            for mode in LearningMode.allCases {
+                model.selectMode(mode)
+                try await Task.sleep(for: .milliseconds(200))
+                hosting.layoutSubtreeIfNeeded()
+                let editor = try XCTUnwrap(descendants(hosting).compactMap { $0 as? PythonTextView }.first)
+                let scroll = try XCTUnwrap(editor.enclosingScrollView)
+                let baseline = scroll.frame.size
+                model.lastRunCode = model.code
+                model.checkOutcomes = outcomes
+                model.output = mode == .assessment ? "Program finished without printed output."
+                    : "[Three items count twice]\ncount = 3\nbonus = 1\n4\nExpected: 7\nActual: 4"
+                model.feedback = "Code checks did not pass. Compare the expected and actual values."
+                try await Task.sleep(for: .milliseconds(200))
+                hosting.layoutSubtreeIfNeeded()
+                XCTAssertEqual(scroll.frame.height, baseline.height, accuracy: 1)
+                XCTAssertEqual(scroll.frame.width, baseline.width, accuracy: 1)
+                XCTAssertEqual(hosting.frame.width, size.width, accuracy: 1)
+                XCTAssertEqual(hosting.frame.height, size.height, accuracy: 1)
+                let name = "readable-checks-\(mode.rawValue.lowercased())-\(Int(size.width))"
+                try saveSnapshot(of: hosting, name: name)
+                if mode == .assessment {
+                    XCTAssertNil(model.experimentPlan)
+                } else {
+                    model.code += "\n"
+                    try await Task.sleep(for: .milliseconds(150))
+                    hosting.layoutSubtreeIfNeeded()
+                    XCTAssertTrue(model.isOutputStale)
+                    XCTAssertEqual(model.checkOutcomes, outcomes)
+                    XCTAssertEqual(scroll.frame.height, baseline.height, accuracy: 1)
+                    try saveSnapshot(of: hosting, name: name + "-stale")
+                }
+            }
+            model.selectMode(.practice)
+            model.code = model.exercise.referenceSolution.replacingOccurrences(of: "original_gate = True", with: "original_gate = False")
+            model.runCode(test: true)
+            try await waitForRun()
+            try await Task.sleep(for: .milliseconds(200))
+            hosting.layoutSubtreeIfNeeded()
+            XCTAssertTrue(model.checkOutcomes.allSatisfy { $0.status == .passed })
+            XCTAssertEqual(model.solutionChecksPassed, false)
+            XCTAssertEqual(model.progress.playerProgress.totalXP, 0)
+            try saveSnapshot(of: hosting, name: "readable-checks-original-failure-\(Int(size.width))")
+        }
+    }
+
+    @MainActor
+    func testNativeScratchInputsAndExperimentOutputSnapshots() async throws {
+        _ = NSApplication.shared
+        installReadableChecks()
+        model.code = model.exercise.referenceSolution
+        for size in [NSSize(width: 1380, height: 900), NSSize(width: 1080, height: 740)] {
+            model.experimentInputs["count"] = "8"
+            let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            let hosting = NSHostingView(rootView: WorkspaceView().environmentObject(model))
+            window.contentView = hosting
+            window.orderFront(nil)
+            defer { window.close() }
+            try await Task.sleep(for: .milliseconds(200))
+            hosting.layoutSubtreeIfNeeded()
+            func descendants(_ view: NSView) -> [NSView] { view.subviews.flatMap { [$0] + descendants($0) } }
+            let editor = try XCTUnwrap(descendants(hosting).compactMap { $0 as? PythonTextView }.first)
+            let scroll = try XCTUnwrap(editor.enclosingScrollView)
+            let baseline = scroll.frame.size
+            let inputs = NSHostingView(rootView: ExperimentInputsView().environmentObject(model).appearanceEnvironment())
+            inputs.frame = NSRect(x: 0, y: 0, width: 520, height: 460)
+            inputs.layoutSubtreeIfNeeded()
+            try saveSnapshot(of: inputs, name: "scratch-inputs-\(Int(size.width))")
+            model.runExperiment()
+            try await waitForRun()
+            try await Task.sleep(for: .milliseconds(200))
+            hosting.layoutSubtreeIfNeeded()
+            XCTAssertEqual(model.lastExperimentInputs, ["count": "8", "bonus": "1"])
+            XCTAssertEqual(scroll.frame.height, baseline.height, accuracy: 1)
+            XCTAssertEqual(scroll.frame.width, baseline.width, accuracy: 1)
+            XCTAssertTrue(model.progress.attempts.isEmpty)
+            XCTAssertEqual(model.progress.playerProgress.totalXP, 0)
+            try saveSnapshot(of: hosting, name: "experiment-output-\(Int(size.width))")
+            model.experimentInputs["count"] = "9"
+            try await Task.sleep(for: .milliseconds(150))
+            hosting.layoutSubtreeIfNeeded()
+            XCTAssertTrue(model.isOutputStale)
+            try saveSnapshot(of: hosting, name: "experiment-output-stale-\(Int(size.width))")
+        }
+    }
+
+    @MainActor
+    func testNativePracticeGuidesRenderCollapsedAndExpandedWithoutChangingEditorGeometry() async throws {
+        _ = NSApplication.shared
+        let tasks = [("basics", "basics-total"), ("basics", "basics-transfer-delivery-note"),
+                     ("functions", "functions-refactor-batch-cost"), ("collections", "collections-maintenance-label-counts")]
+        func descendants(_ view: NSView) -> [NSView] { view.subviews.flatMap { [$0] + descendants($0) } }
+        for (chapterID, exerciseID) in tasks {
+            model.selectChapter(chapterID)
+            if !model.isUnlocked { model.overrideUnlock() }
+            model.selectExercise(exerciseID)
+            let exercise = model.exercise
+            XCTAssertEqual(exercise.id, exerciseID)
+            XCTAssertNotNil(model.practiceGuide)
+            var unprofiled = exercise
+            unprofiled.id = "generated-synthetic-layout-baseline"
+            unprofiled.practiceProfile = nil
+            model.progress.generatedExercises[chapterID] = [unprofiled]
+            for size in [NSSize(width: 1380, height: 900), NSSize(width: 1080, height: 740)] {
+                var baseline: NSRect?
+                for variant in ["unprofiled", "collapsed", "expanded"] {
+                    model.selectExercise(variant == "unprofiled" ? unprofiled.id : exerciseID)
+                    let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+                    window.isReleasedWhenClosed = false
+                    let hosting = NSHostingView(rootView: WorkspaceView(practiceGuideExpanded: variant == "expanded").environmentObject(model))
+                    window.contentView = hosting
+                    window.orderFront(nil)
+                    defer { window.close() }
+                    try await Task.sleep(for: .milliseconds(200))
+                    hosting.layoutSubtreeIfNeeded()
+                    let editor = try XCTUnwrap(descendants(hosting).compactMap { $0 as? PythonTextView }.first)
+                    let scroll = try XCTUnwrap(editor.enclosingScrollView)
+                    let frame = hosting.convert(scroll.bounds, from: scroll)
+                    if let baseline {
+                        XCTAssertEqual(frame.minX, baseline.minX, accuracy: 1)
+                        XCTAssertEqual(frame.minY, baseline.minY, accuracy: 1)
+                        XCTAssertEqual(frame.width, baseline.width, accuracy: 1)
+                        XCTAssertEqual(frame.height, baseline.height, accuracy: 1)
+                    } else {
+                        baseline = frame
+                        XCTAssertNil(model.practiceGuide)
+                    }
+                    XCTAssertEqual(hosting.frame.width, size.width, accuracy: 1)
+                    XCTAssertEqual(hosting.frame.height, size.height, accuracy: 1)
+                    XCTAssertEqual(model.code, exercise.starterCode)
+                    XCTAssertEqual(model.reflection, "")
+                    XCTAssertEqual(model.hintCount, 0)
+                    XCTAssertEqual(model.requestCount, 0)
+                    XCTAssertTrue(model.progress.attempts.isEmpty)
+                    XCTAssertTrue(model.progress.masteredChapterIDs.isEmpty)
+                    XCTAssertEqual(model.progress.playerProgress.totalXP, 0)
+                    try saveSnapshot(of: hosting, name: "practice-guide-\(exerciseID)-\(variant)-\(Int(size.width))")
+                }
+            }
+        }
     }
 
     @MainActor

@@ -73,6 +73,25 @@ extension Curriculum {
 
         > **Watch out:** A line such as `name.strip()` on its own does not change `name`. Assign the returned value to keep it.
 
+        ### Diagnose text with visible edges
+
+        Spaces are hard to spot in output. Since these values are strings, join a marker on each side to make the edges visible:
+
+        ```python
+        raw = "  SKY Lab  "
+        trimmed = raw.strip()
+        cleaned = trimmed.lower()
+        print("|" + raw + "|")
+        print("|" + cleaned + "|")
+        ```
+
+        ```text
+        |  SKY Lab  |
+        |sky lab|
+        ```
+
+        The markers are only for inspection, not part of the saved cleaned text. Compare the returned value with the name that later code actually uses.
+
         ## Chaining is the same work written more compactly
 
         Once separate steps make sense, you can **chain** calls. Python evaluates `raw.strip()` first, then calls `.lower()` on that returned string.
@@ -166,6 +185,28 @@ extension Curriculum {
         - `total / 1000 * 0.005` expresses the total in thousands, then applies the rate: a cost of 0.001 dollars.
 
         > **Tip:** Keep the unrounded numeric result. Floating-point checks allow tiny representation differences.
+
+        ### Predict before repairing an expression
+
+        Work out an expression in Python's order before running it. Then compare that prediction with the task's rule: an expression can execute correctly yet represent the wrong rule.
+
+        ```python
+        boxes = 2
+        red_each = 3
+        blue_each = 1
+        predicted = 7
+        observed = boxes * red_each + blue_each
+        intended = boxes * (red_each + blue_each)
+        print(predicted, observed, intended)
+        ```
+
+        ```text
+        7 7 8
+        ```
+
+        The prediction matches what Python does: multiply first, then add one. The intended rule counts both colors in every box. Label intermediate quantities in plain language, such as “items per box” and “items across all boxes,” to check what each expression means.
+
+        A prediction records your reasoning for one example. Matching a predicted number is not proof that a general calculation is correct; repair the calculation and try another input too.
 
         ## Complete groups, leftovers, and rounding up
 
@@ -314,7 +355,106 @@ extension Curriculum {
                      "sample_count = 53\nbatch_size = 8\nfull_batches = 0\nleftover = 0\nscheduled_batches = 0\n",
                      "sample_count = 53\nbatch_size = 8\nfull_batches = sample_count // batch_size\nleftover = sample_count % batch_size\nscheduled_batches = (sample_count + batch_size - 1) // batch_size\n",
                      "assert full_batches == 6 and type(full_batches) is int\nassert leftover == 5 and type(leftover) is int\nassert scheduled_batches == 7 and type(scheduled_batches) is int\nassert full_batches * batch_size + leftover == sample_count\n",
-                     ["A complete batch uses every space. Items left after full groups still need one group, even though it is only partially filled.", "With nonnegative integer inputs, `//` gives the number of complete groups and `%` gives the remaining items. Ordinary `/` gives a possibly fractional quotient instead.", "The lesson's round-up rule shifts the count by one less than the capacity before whole-number division. Check that the rule gives no extra group for an exact multiple or zero items."])
+                     ["A complete batch uses every space. Items left after full groups still need one group, even though it is only partially filled.", "With nonnegative integer inputs, `//` gives the number of complete groups and `%` gives the remaining items. Ordinary `/` gives a possibly fractional quotient instead.", "The lesson's round-up rule shifts the count by one less than the capacity before whole-number division. Check that the rule gives no extra group for an exact multiple or zero items."]),
+            exercise("values-debug-clean-label", "Debug: a label stays messy", """
+                     Goal:
+                     Repair a program that runs but leaves spaces and capitals in its supposedly cleaned label.
+
+                     Starting code:
+                     - `raw_label = '  STAR Trial  '` is an input. Keep it unchanged, including the spaces.
+                     - The remaining lines attempt to clean it and save a character count. The starter saves a length of `14`.
+
+                     Your task:
+                     1. Inspect the saved `clean_label`. You may print it between visible markers as shown in the lesson.
+                     2. Repair the code so `clean_label` has no edge whitespace and uses lowercase letters, keeping its internal space.
+                     3. Calculate `label_length` from the cleaned string, while leaving `raw_label` unchanged.
+
+                     Expected result:
+                     - `clean_label` is exactly `'star trial'`.
+                     - `label_length` is the integer `10`.
+
+                     Check:
+                     Choose **Check solution**. It checks the original text, cleaned text, and saved count. Inspection markers must not become part of `clean_label`.
+                     """,
+                     "raw_label = '  STAR Trial  '\nclean_label = raw_label\nclean_label.strip().lower()\nlabel_length = len(clean_label)\n",
+                     "raw_label = '  STAR Trial  '\nclean_label = raw_label.strip().lower()\nlabel_length = len(clean_label)\n",
+                     "assert raw_label == '  STAR Trial  '\nassert clean_label == 'star trial'\nassert type(label_length) is int and label_length == 10\n",
+                     ["Compare the text saved under each name, not just the operations you see in the source.", "String methods produce new strings. Which assignment keeps the result of the cleaning operations?", "Save `raw_label.strip().lower()` in `clean_label` before counting its characters. Keep `raw_label` itself unchanged."],
+                     effort: .init(difficulty: .easier, scopeUnits: 1)),
+            exercise("values-predict-token-total", "Predict and debug: tokens per job", """
+                     Goal:
+                     Predict what a runnable expression does, then repair a total that does not count every job's input and output tokens.
+
+                     Starting code:
+                     - `jobs = 3`, `input_each = 40`, and `output_each = 10` are fixed inputs. Each job uses both kinds of tokens.
+                     - `total_tokens` is an attempted calculation. It runs, but disagrees with the intended total below.
+                     - `predicted_before = 0` is a placeholder for your prediction of the starter's original total.
+
+                     Your task:
+                     1. Before running, replace `predicted_before` with the number you predict the original expression will save.
+                     2. Run and compare your prediction with `total_tokens`, using print if helpful.
+                     3. Keep that original prediction, and repair the `total_tokens` calculation to include both kinds of tokens for every job. Use the input names rather than a fixed answer.
+
+                     Expected result:
+                     - `predicted_before` records the numeric value of the original expression, not the repaired total.
+                     - The repaired `total_tokens` is the integer `150`.
+                     - With `jobs` temporarily changed to `2`, the repaired total would be `100`. Restore `jobs = 3` before checking.
+
+                     Check:
+                     Choose **Check solution**. It checks the original inputs, original-expression prediction, and repaired result for this example. The prediction is a reading exercise, not proof of a general algorithm; try the second job count yourself.
+                     """,
+                     "jobs = 3\ninput_each = 40\noutput_each = 10\npredicted_before = 0\ntotal_tokens = jobs * input_each + output_each\n",
+                     "jobs = 3\ninput_each = 40\noutput_each = 10\npredicted_before = 130\ntotal_tokens = jobs * (input_each + output_each)\n",
+                     "assert jobs == 3 and input_each == 40 and output_each == 10\nassert type(predicted_before) is int and predicted_before == 130\nassert type(total_tokens) is int and total_tokens == 150\n",
+                     ["Separate two questions: what does the original expression do, and what does the rule require for each job?", "Multiplication happens before addition. Work out `3 * 40` first when predicting the original, then account for the remaining addition.", "The original prediction is `130`. For the repair, group `input_each + output_each` in parentheses so `jobs` multiplies all tokens for one job."],
+                     effort: .init(difficulty: .similar, scopeUnits: 2)),
+            exercise("values-transfer-workshop-cost", "Prepare a workshop cost", """
+                     Goal:
+                     Prepare a clean workshop label and its total cost. Choose an approach using the text and number operations already taught.
+
+                     Starting code:
+                     - Keep the supplied input lines unchanged: `raw_label = '  CLAY Lab  '`, `attendees = 4`, `seat_price = 2.5`, and `setup_fee = 3.0`.
+                     - The label is a string, possibly empty or whitespace-only. Attendees are a nonnegative integer; prices are finite nonnegative floats in whole or half dollars. No invalid inputs need handling.
+                     - Replace `workshop_label = ''` and `total_cost = 0.0`. Additional meaningful names are welcome.
+
+                     Your task:
+                     1. Save `workshop_label` without edge whitespace and with lowercase letters, preserving any spaces between words.
+                     2. Save the float `total_cost`: every attendee pays the seat price, and the workshop pays one setup fee even when nobody attends. Do not round or turn the cost into text.
+
+                     Expected result:
+                     - The supplied inputs give `workshop_label` equal to `'clay lab'` and `total_cost` equal to `13.0`.
+                     - Zero attendees with the same prices give `3.0`.
+                     - Label `'  Paper ART '` with six attendees, seat price `0.5`, and setup fee `1.5` gives `'paper art'` and `4.5`.
+                     - A whitespace-only label becomes `''`; it does not change the cost rule.
+
+                     Check:
+                     Choose **Check solution**. Fresh named cases vary the label, attendance, and both prices, including zero attendance and empty text. The original typed checks must pass too. A failed case leaves later cases not reached.
+
+                     To explore without changing your draft, awarding XP, or completing the exercise, enter a Python literal (a directly written value such as `0`, `0.5`, or `'Paper ART'`) in an Experiment field and choose **Run experiment**. Keep the supplied input lines unchanged for checking.
+                     """,
+                     "raw_label = '  CLAY Lab  '\nattendees = 4\nseat_price = 2.5\nsetup_fee = 3.0\nworkshop_label = ''\ntotal_cost = 0.0\n",
+                     "raw_label = '  CLAY Lab  '\nattendees = 4\nseat_price = 2.5\nsetup_fee = 3.0\nworkshop_label = raw_label.strip().lower()\ntotal_cost = attendees * seat_price + setup_fee\n",
+                     "assert raw_label == '  CLAY Lab  ' and attendees == 4\nassert seat_price == 2.5 and setup_fee == 3.0\nassert type(workshop_label) is str and workshop_label == 'clay lab'\nassert type(total_cost) is float and total_cost == 13.0\n",
+                     ["Treat the label and the cost as two separate results. Which part of the price is per person, and which part is paid only once?", "String methods return new text, so save their result. The setup fee remains even when the number of attendees is zero.", "Use `raw_label.strip().lower()` for the label and `attendees * seat_price + setup_fee` for the cost. Separate text-cleaning assignments are equally valid."],
+                     effort: .init(difficulty: .similar, scopeUnits: 2),
+                     checkPlan: .init(inputs: [
+                        .init(name: "raw_label", defaultLiteral: "'  CLAY Lab  '"),
+                        .init(name: "attendees", defaultLiteral: "4"),
+                        .init(name: "seat_price", defaultLiteral: "2.5"),
+                        .init(name: "setup_fee", defaultLiteral: "3.0")
+                     ], checks: [
+                        .init(id: "original-label", title: "Original workshop: clean label", target: "workshop_label", expectedLiteral: "'clay lab'"),
+                        .init(id: "original-cost", title: "Original workshop: total cost", target: "total_cost", expectedLiteral: "13.0"),
+                        .init(id: "zero-attendance", title: "Nobody attends: setup still costs money", inputs: ["attendees": "0"], target: "total_cost", expectedLiteral: "3.0"),
+                        .init(id: "changed-label", title: "Another workshop with an internal space", inputs: ["raw_label": "'  Paper ART '"], target: "workshop_label", expectedLiteral: "'paper art'"),
+                        .init(id: "changed-prices", title: "Six half-dollar seats and one setup fee", inputs: ["attendees": "6", "seat_price": "0.5", "setup_fee": "1.5"], target: "total_cost", expectedLiteral: "4.5"),
+                        .init(id: "blank-label", title: "Whitespace-only label", inputs: ["raw_label": "'   '"], target: "workshop_label", expectedLiteral: "''"),
+                        .init(id: "empty-label", title: "Already empty label", inputs: ["raw_label": "''"], target: "workshop_label", expectedLiteral: "''"),
+                        .init(id: "free-workshop", title: "Zero prices with attendees", inputs: ["attendees": "2", "seat_price": "0.0", "setup_fee": "0.0"], target: "total_cost", expectedLiteral: "0.0")
+                     ]),
+                     practiceProfile: .init(form: .transfer, scaffolding: .independent,
+                                            skillIDs: ["values-section-2", "values-section-3", "values-section-5"],
+                                            reflectionPrompts: ["Which part of the cost changes with attendance?", "What stays unchanged when you save the cleaned label?"]))
         ],
         assessment: exercise("values-assessment", "Summarize a synthetic run", """
                              Goal:

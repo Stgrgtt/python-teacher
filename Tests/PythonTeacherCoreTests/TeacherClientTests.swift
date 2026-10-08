@@ -71,6 +71,47 @@ final class TeacherClientTests: XCTestCase {
         XCTAssertThrowsError(try TeacherClient.decodeExercise(String(decoding: JSONSerialization.data(withJSONObject: payload), as: UTF8.self)))
     }
 
+    func testProviderExerciseCannotSupplyAppOwnedCheckPlanOrExpectedStarterError() async throws {
+        let chapter = Curriculum.chapters[0]
+        let options = PracticeGenerationOptions(style: .debug)
+        let topics = try options.coverageTopics(for: chapter, selectedExercise: nil)
+        var payload = exercisePayload(topics: topics)
+        let authored = try XCTUnwrap(Curriculum.chapters.flatMap(\.exercises).first { $0.checkPlan != nil })
+        payload["checkPlan"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(XCTUnwrap(authored.checkPlan)))
+        payload["expectedStarterError"] = "SyntaxError"
+        payload["practiceProfile"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(XCTUnwrap(authored.practiceProfile)))
+        let text = String(decoding: try JSONSerialization.data(withJSONObject: payload), as: UTF8.self)
+        let decoded = try TeacherClient.decodeExercise(text, requiredCoverage: topics)
+        XCTAssertNil(decoded.checkPlan)
+        XCTAssertNil(decoded.expectedStarterError)
+        XCTAssertNil(decoded.practiceProfile)
+        let response = try generationResponse(payload: payload)
+        let session = makeSession { request in
+            let body = try self.body(of: request)
+            let instructions = try XCTUnwrap(body["instructions"] as? String)
+            XCTAssertTrue(instructions.contains("starter must run without errors"))
+            XCTAssertTrue(instructions.contains("checks-origin AssertionError"))
+            XCTAssertTrue(instructions.contains("an assertion in learner code"))
+            XCTAssertTrue(instructions.contains("Functions called by the tests must return normally"))
+            let format = try XCTUnwrap((body["text"] as? [String: Any])?["format"] as? [String: Any])
+            let schema = try XCTUnwrap(format["schema"] as? [String: Any])
+            let properties = try XCTUnwrap(schema["properties"] as? [String: Any])
+            XCTAssertEqual(Set(properties.keys), Set(["title", "instructions", "starterCode", "referenceSolution", "testCode", "hints", "coverage"]))
+            XCTAssertNil(properties["checkPlan"])
+            XCTAssertNil(properties["expectedStarterError"])
+            XCTAssertNil(properties["practiceProfile"])
+            return response
+        }
+        defer { session.invalidateAndCancel() }
+        let (generated, _) = try await TeacherClient(apiKey: "test-not-a-real-key", model: "test-model", session: session)
+            .generate(chapter: chapter, options: options)
+        XCTAssertNil(generated.checkPlan)
+        XCTAssertNil(generated.expectedStarterError)
+        XCTAssertNil(generated.practiceProfile)
+        XCTAssertEqual(generated.referenceSolution, decoded.referenceSolution)
+        XCTAssertEqual(generated.testCode, decoded.testCode)
+    }
+
     func testRejectsTruncatedInstructionsInsideOtherwiseValidExerciseJSON() throws {
         let payload: [String: Any] = [
             "title": "Synthetic JSON tally",
@@ -188,6 +229,9 @@ final class TeacherClientTests: XCTestCase {
             XCTAssertTrue(rules.contains("complete current editor code"))
             XCTAssertTrue(rules.contains("Do not ask the learner to paste"))
             XCTAssertTrue(rules.contains("older code"))
+            XCTAssertTrue(rules.contains("latestRun.inputOverrides"))
+            XCTAssertTrue(rules.contains("currentExperimentInputs"))
+            XCTAssertTrue(rules.contains("Experiments never award progress"))
             return (200, Data("{\"status\":\"completed\",\"output\":[{\"type\":\"message\",\"content\":[{\"type\":\"output_text\",\"text\":\"Inspect the current expression.\"}]}]}".utf8))
         }
         defer { session.invalidateAndCancel() }
@@ -923,6 +967,8 @@ final class TeacherClientTests: XCTestCase {
             let coverage = try XCTUnwrap((schema["properties"] as? [String: Any])?["coverage"] as? [String: Any])
             XCTAssertEqual(coverage["required"] as? [String], chapter.practiceTopics.map(\.id))
             XCTAssertTrue((body["system"] as? String)?.contains("Every assert site must execute and pass") == true)
+            XCTAssertTrue((body["system"] as? String)?.contains("starter must run without errors") == true)
+            XCTAssertTrue((body["system"] as? String)?.contains("checks-origin AssertionError") == true)
             let messages = try XCTUnwrap(body["messages"] as? [[String: String]])
             XCTAssertEqual(messages.count, 1)
             let prompt = try XCTUnwrap(messages[0]["content"])
@@ -954,6 +1000,8 @@ final class TeacherClientTests: XCTestCase {
                 XCTAssertEqual(messages.first?["role"], "system")
                 XCTAssertTrue(messages.first?["content"]?.contains("no prior Python knowledge") == true)
                 if body["stream"] as? Bool == true {
+                    XCTAssertTrue(messages.first?["content"]?.contains("starter must run without errors") == true)
+                    XCTAssertTrue(messages.first?["content"]?.contains("checks-origin AssertionError") == true)
                     XCTAssertEqual(request.timeoutInterval, 300)
                     XCTAssertEqual((body["stream_options"] as? [String: Bool])?["include_usage"], true)
                     XCTAssertEqual(body["max_tokens"] as? Int, 12000 + 8000)

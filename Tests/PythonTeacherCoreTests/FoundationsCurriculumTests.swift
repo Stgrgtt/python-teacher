@@ -3,6 +3,16 @@ import XCTest
 @testable import PythonTeacherCore
 
 final class FoundationsCurriculumTests: XCTestCase {
+    private let phase1ALabIDs: [String: [String]] = [
+        "basics": ["basics-debug-quote", "basics-debug-saved-total"],
+        "values": ["values-debug-clean-label", "values-predict-token-total"],
+        "decisions": ["decisions-debug-priority", "decisions-debug-entry-boundary"],
+        "loops": ["loops-debug-running-total", "loops-predict-threshold"],
+        "functions": ["functions-debug-return", "functions-predict-counterexample"],
+        "collections": ["collections-debug-optional-field"],
+        "reliability": ["reliability-debug-later-record"]
+    ]
+
     private func chapter(_ id: String) throws -> Chapter {
         try XCTUnwrap(Curriculum.chapters.first { $0.id == id }, id)
     }
@@ -17,6 +27,171 @@ final class FoundationsCurriculumTests: XCTestCase {
 
     private func headings(_ chapter: Chapter) -> [String] {
         chapter.practiceTopics.map { String($0.title.dropFirst(chapter.title.count + 2)) }
+    }
+
+    func testDebuggingExpansionPreservesOriginalActivitiesAndSectionIDs() throws {
+        let originals: [String: [String]] = [
+            "basics": ["basics-name", "basics-total", "basics-message"],
+            "values": ["values-budget", "values-label", "values-batches"],
+            "decisions": ["decisions-route", "decisions-quota", "decisions-bands-v2"],
+            "loops": ["loops-total", "loops-filter", "loops-retries-v2"],
+            "functions": ["functions-batches", "functions-rate", "functions-preview-v2"],
+            "collections": ["collections-count", "collections-json", "collections-rank"],
+            "reliability": ["reliability-score", "reliability-parse", "reliability-summary"]
+        ]
+        let originalHeadings: [String: [String]] = [
+            "basics": ["Code is a sequence of instructions", "Save a value with a name", "Calculate with saved numbers", "Join text", "Work in the editor"],
+            "values": ["Build expressions one step at a time", "What the dot and parentheses mean", "Chaining is the same work written more compactly", "Put saved values into a message", "Numbers, rates, and units", "Complete groups, leftovers, and rounding up"],
+            "decisions": ["Make the rule visible", "Debug the boundaries", "Combine conditions with and, or, and not", "Save a yes/no answer as a Boolean"],
+            "loops": ["Keep several values in a list", "Visit every item with for", "Finish calculations after visiting every item", "Repeat a known number of times", "Repeat while a condition holds", "Stop early or skip an item", "Trace before guessing"],
+            "functions": ["Separate inputs from results", "Read part of a string with a slice", "Replace a function's placeholder, not its interface", "Default values and keyword arguments", "Test a hypothesis"],
+            "collections": ["Choose a structure that fits", "Count repeated categories", "Convert JSON text into Python values", "Group fixed values in a tuple", "Sort without changing the input", "Keep unique names when requested", "Debug the shape"],
+            "reliability": ["Make failure part of the contract", "Check types before using operations", "Catch an expected failure", "Validate formats, not just conversions", "Tests are evidence, not validation code", "Build a small trustworthy tool"]
+        ]
+        var additions: [Exercise] = []
+        for (id, ids) in originals {
+            let current = try chapter(id)
+            XCTAssertEqual(Array(current.exercises.prefix(3).map(\.id)), ids, id)
+            XCTAssertEqual(current.lessonSections.map(\.heading), originalHeadings[id], id)
+            XCTAssertEqual(current.lessonSections.map(\.topic.id), originalHeadings[id]?.indices.map { "\(id)-section-\($0 + 1)" }, id)
+            XCTAssertEqual(current.assessment.id, id == "decisions" ? "decisions-assessment-v2" : "\(id)-assessment")
+            XCTAssertNil(current.assessment.expectedStarterError)
+            let expectedLabs = try XCTUnwrap(phase1ALabIDs[id], id)
+            let labs = Array(current.exercises.dropFirst(3).prefix(expectedLabs.count))
+            XCTAssertEqual(labs.map(\.id), expectedLabs, "Original Phase 1A order and identities remain unchanged: \(id)")
+            XCTAssertEqual(labs.count, ["collections", "reliability"].contains(id) ? 1 : 2, id)
+            for lab in labs {
+                XCTAssertTrue(lab.id.hasPrefix("\(id)-debug-") || lab.id.hasPrefix("\(id)-predict-"), lab.id)
+                XCTAssertFalse(Curriculum.isAssessment(lab.id), lab.id)
+                XCTAssertEqual(Curriculum.activityID(for: lab.id), lab.id)
+                XCTAssertTrue(lab.hasRequiredInstructionSections, lab.id)
+                XCTAssertNotNil(lab.effort, lab.id)
+                XCTAssertFalse(lab.effort?.estimated ?? true, lab.id)
+                if let error = lab.expectedStarterError {
+                    XCTAssertTrue(["SyntaxError", "IndentationError", "NameError", "TypeError", "KeyError", "IndexError"].contains(error), lab.id)
+                }
+            }
+            additions += labs
+        }
+        XCTAssertEqual(additions.count, 12)
+        XCTAssertEqual(additions.compactMap(\.effort).reduce(0) { $0 + $1.practiceXP }, 1_600)
+        XCTAssertEqual(Set(additions.map(\.id)).count, 12)
+        XCTAssertTrue(additions.contains { $0.expectedStarterError == "SyntaxError" })
+        XCTAssertTrue(additions.contains { $0.id.contains("-predict-") })
+        XCTAssertTrue(try chapter("basics").lesson.contains("Understanding errors"))
+        XCTAssertTrue(try chapter("functions").lesson.contains("Debugging systematically"))
+    }
+
+    func testIndependentPracticeAppendsNineDistinctActivitiesAfterImmutableFoundationPrefix() throws {
+        let expected: [String: [String]] = [
+            "basics": ["basics-transfer-delivery-note"],
+            "values": ["values-transfer-workshop-cost"],
+            "decisions": ["decisions-transfer-library-entry"],
+            "loops": ["loops-transfer-water-log"],
+            "functions": ["functions-transfer-ticket-total", "functions-refactor-batch-cost"],
+            "collections": ["collections-transfer-stock-report", "collections-maintenance-label-counts"],
+            "reliability": ["reliability-transfer-gradebook"]
+        ]
+        var additions: [Exercise] = []
+        for (id, ids) in expected {
+            let current = try chapter(id)
+            let oldCount = 3 + (try XCTUnwrap(phase1ALabIDs[id])).count
+            let tasks = Array(current.exercises.dropFirst(oldCount))
+            XCTAssertEqual(tasks.map(\.id), ids, id)
+            for task in tasks {
+                XCTAssertFalse(Curriculum.isAssessment(task.id))
+                XCTAssertEqual(Curriculum.activityID(for: task.id), task.id)
+                XCTAssertTrue(task.practiceProfile?.isWellFormed == true, task.id)
+                XCTAssertTrue(task.hasRequiredInstructionSections, task.id)
+                XCTAssertNil(task.expectedStarterError, task.id)
+                XCTAssertNotNil(task.effort, task.id)
+                XCTAssertFalse(task.effort?.estimated ?? true, task.id)
+            }
+            additions += tasks
+        }
+        XCTAssertEqual(additions.count, 9)
+        XCTAssertEqual(Set(additions.map(\.id)).count, 9)
+        XCTAssertEqual(additions.filter { $0.practiceProfile?.form == .transfer }.count, 7)
+        XCTAssertEqual(additions.filter { $0.practiceProfile?.form == .refactor }.count, 1)
+        XCTAssertEqual(additions.filter { $0.practiceProfile?.form == .maintenance }.count, 1)
+        XCTAssertEqual(additions.compactMap(\.effort).reduce(0) { $0 + $1.practiceXP }, 1_600)
+    }
+
+    func testStarterFailureMetadataIsOptionalAndRoundTripsWithoutChangingLegacyWork() throws {
+        let original = try XCTUnwrap(Curriculum.chapters.first?.exercises.first)
+        var payload = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(original)) as? [String: Any])
+        payload.removeValue(forKey: "expectedStarterError")
+        let decoded = try JSONDecoder().decode(Exercise.self, from: JSONSerialization.data(withJSONObject: payload))
+        XCTAssertNil(decoded.expectedStarterError)
+        XCTAssertEqual(decoded, original)
+        for error in ["SyntaxError", "NameError", "KeyError"] {
+            var lab = original
+            lab.expectedStarterError = error
+            XCTAssertEqual(try JSONDecoder().decode(Exercise.self, from: JSONEncoder().encode(lab)), lab)
+        }
+        var state = ProgressState()
+        state.generatedExercises["basics"] = [decoded]
+        state.drafts["basics:practice:\(decoded.id)"] = "learner_name = 'unchanged'\n"
+        state.attempts = [Attempt(chapterID: "basics", exerciseID: "basics-assessment", mode: .assessment,
+                                  code: "saved evidence", testsPassed: true, quizCorrect: 3, quizTotal: 3, reflection: "A saved explanation")]
+        let restored = try JSONDecoder().decode(ProgressState.self, from: JSONEncoder().encode(state))
+        XCTAssertEqual(restored.generatedExercises["basics"], [decoded])
+        XCTAssertEqual(restored.drafts, state.drafts)
+        XCTAssertEqual(restored.masteredChapterIDs, ["basics"])
+        XCTAssertEqual(restored.attempts.map(\.id), state.attempts.map(\.id))
+        XCTAssertEqual(restored.attempts.map(\.code), state.attempts.map(\.code))
+        XCTAssertEqual(restored.playerProgress, state.playerProgress)
+    }
+
+    func testNewDebuggingStartersAreRunnableUnlessSyntaxFailureIsExplicit() async throws {
+        let runner = PythonRunner()
+        let python = ProcessInfo.processInfo.environment["PYTHON_TEACHER_TEST_PYTHON"] ?? "/usr/bin/python3"
+        for chapter in Curriculum.chapters where chapter.track == .foundations {
+            for id in try XCTUnwrap(phase1ALabIDs[chapter.id]) {
+                let lab = try XCTUnwrap(chapter.exercises.first { $0.id == id }, id)
+                let result = try await runner.run(code: lab.starterCode, pythonPath: python)
+                if lab.expectedStarterError == "SyntaxError" {
+                    XCTAssertFalse(result.passed, lab.id)
+                    XCTAssertEqual(result.diagnostic?.exceptionType, "SyntaxError", result.output)
+                    XCTAssertEqual(result.diagnostic?.origin, .learner)
+                    XCTAssertEqual(result.diagnostic?.learnerLine, 2)
+                } else {
+                    XCTAssertTrue(result.passed, "\(lab.id): \(result.output)")
+                    XCTAssertNil(result.diagnostic, lab.id)
+                }
+                XCTAssertFalse(result.timedOut, lab.id)
+                XCTAssertFalse(result.cancelled, lab.id)
+            }
+        }
+    }
+
+    func testDebuggingCheckersRejectPlausibleWrongRepairs() async throws {
+        let mutations: [(String, String, String, String)] = [
+            ("functions-debug-return", "return count", "return 0", "AssertionError"),
+            ("functions-debug-return", "reading >= minimum", "reading > minimum", "AssertionError"),
+            ("functions-debug-return", "            count += 1\n    return count", "            count += 1\n        return count", "AssertionError"),
+            ("functions-predict-counterexample", "len(title) <= max_chars", "len(title) < max_chars", "AssertionError"),
+            ("collections-debug-optional-field", "record.get('bonus', 0)", "0", "AssertionError"),
+            ("collections-debug-optional-field", "        totals.append", "        record['bonus'] = record.get('bonus', 0)\n        totals.append", "AssertionError"),
+            ("reliability-debug-later-record", "for record in records:\n        if not isinstance(record", "for record in records[:2]:\n        if not isinstance(record", "TypeError"),
+            ("reliability-debug-later-record", "type(retries) is not int", "not isinstance(retries, int)", "AssertionError"),
+            ("loops-debug-running-total", "total += amount", "total = amount", "AssertionError"),
+            ("loops-predict-threshold", "while value < target", "while value <= target", "AssertionError")
+        ]
+        let labs = Curriculum.chapters.flatMap(\.exercises)
+        let runner = PythonRunner()
+        let python = ProcessInfo.processInfo.environment["PYTHON_TEACHER_TEST_PYTHON"] ?? "/usr/bin/python3"
+        for (id, original, replacement, expectedError) in mutations {
+            let lab = try XCTUnwrap(labs.first { $0.id == id }, id)
+            XCTAssertTrue(lab.referenceSolution.contains(original), "mutation must remain applicable: \(id)")
+            let wrongRepair = lab.referenceSolution.replacingOccurrences(of: original, with: replacement)
+            XCTAssertNotEqual(wrongRepair, lab.referenceSolution, id)
+            let result = try await runner.run(code: wrongRepair, tests: lab.testCode, pythonPath: python)
+            XCTAssertFalse(result.passed, "\(id) accepted \(replacement)")
+            XCTAssertEqual(result.diagnostic?.exceptionType, expectedError, "\(id): \(result.output)")
+            XCTAssertFalse(result.timedOut, id)
+            XCTAssertFalse(result.cancelled, id)
+        }
     }
 
     func testRevisedFoundationActivitiesHaveDistinctIDsAndExecutableStartersAndReferences() async throws {

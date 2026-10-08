@@ -350,6 +350,40 @@ extension Curriculum {
         > **Watch out:** Never remove items from the same list you are traversing; collect a new result instead.
 
         A correct program should match both its final answer and your step-by-step explanation.
+
+        ### Locate the first divergence
+
+        The **first divergence** is the earliest step where the observed state differs from the expected state. Number visits starting at 1 when explaining a trace; this is different from list indices, which start at 0.
+
+        You can save a trace as a list as well as print it. Append the current total after each update:
+
+        ```python
+        amounts = [2, 0, 5]
+        total = 0
+        totals_after = []
+        for amount in amounts:
+            total += amount
+            totals_after.append(total)
+        print(totals_after)
+        print(total)
+        ```
+
+        ```text
+        [2, 2, 7]
+        7
+        ```
+
+        If an attempted version produced `2`, `0`, `5` after those visits, the first divergence would be visit 2: adding zero should preserve the earlier 2. Inspect what ran during that visit, including any assignments before the update. Repair the earliest mismatch, then check later visits too.
+
+        ### Predict a stopping condition
+
+        For a `while` trace, write down the starting value, the condition before each visit, and the value after each update. Decide whether an exactly reached threshold should allow another visit. A condition checked before the body and a value recorded after the update describe different moments.
+
+        Prediction labs ask you to keep a separate prediction of the original sequence while repairing the loop. A saved prediction is evidence about reading the original starter with its supplied inputs, not proof of a general algorithm. Keep that prediction fixed even when trying other inputs. Keep the update that moves the loop toward stopping.
+
+        In labs with **Experiment** fields, leave the supplied input lines unchanged in your code. Enter Python literal values in the fields, such as `5` or `[2, 0, 5]`: values written directly, not calculations or commands. Choose **Run experiment** to observe a fresh run without changing your draft or awarding XP or completion.
+
+        **Check solution** runs each named case afresh and compares expected and actual values. It stops at the first failed case and marks later cases not reached. The original checks still verify your prediction for the original starter. Other input cases check the repaired calculation, not a new prediction.
         """,
         exercises: [
             exercise("loops-total", "Count usable measurements", """
@@ -449,7 +483,143 @@ extension Curriculum {
                      "retry_count = 4\nbase_seconds = 2\nmax_wait = 20\ndelays = []\ntotal_wait = 0\n",
                      "retry_count = 4\nbase_seconds = 2\nmax_wait = 20\ndelays = []\ntotal_wait = 0\nretry_number = 0\nwhile retry_number < retry_count:\n    delay = base_seconds * (2 ** retry_number)\n    if total_wait + delay > max_wait:\n        break\n    delays.append(delay)\n    total_wait += delay\n    retry_number += 1\n",
                      "assert retry_count == 4 and base_seconds == 2 and max_wait == 20\nassert delays == [2, 4, 8]\nassert total_wait == 14\n",
-                     ["Retry numbers start at zero and stop before `retry_count`. `range(retry_count)` supplies them, or a `while` loop can count them with a variable that starts at 0 and increases by one each visit.", "`**` means raising to a power, not multiplication by the exponent. A power of zero gives 1, so the first delay is the base itself. `^` is a different operation and is not suitable here.", "Compute the delay first, then compare `total_wait` plus that delay with `max_wait` using `>` so an exact match is still allowed. When it is over the budget, `break` ends the loop; otherwise update both the list and the total."])
+                     ["Retry numbers start at zero and stop before `retry_count`. `range(retry_count)` supplies them, or a `while` loop can count them with a variable that starts at 0 and increases by one each visit.", "`**` means raising to a power, not multiplication by the exponent. A power of zero gives 1, so the first delay is the base itself. `^` is a different operation and is not suitable here.", "Compute the delay first, then compare `total_wait` plus that delay with `max_wait` using `>` so an exact match is still allowed. When it is over the budget, `break` ends the loop; otherwise update both the list and the total."]),
+            exercise("loops-debug-running-total", "Debug: find the first wrong total", """
+                Goal:
+                Repair a running total. The starter finishes with `2` rather than the total of all three amounts.
+
+                Starting code:
+                - `amounts = [4, 3, 2]` is the input list. Keep its values and order unchanged.
+                - `total` and `totals_after` attempt to record the sum and the sum after each visit.
+                - `first_wrong_visit = 0` is a placeholder for the first visit where the original trace disagrees with the intended running total. Count visits from 1.
+
+                Your task:
+                1. Predict the intended running total after each amount, then run the original code and inspect `totals_after`.
+                2. Save the number of the first mismatching visit in `first_wrong_visit`. Keep this diagnosis of the original even after the repair.
+                3. Repair the loop so `total` includes every amount and `totals_after` records the total after each update.
+                4. Use the loop to compute the results rather than assigning a fixed total or trace. An empty input would leave `total` at zero and the trace empty.
+
+                Expected result:
+                - The repaired `total` is the integer `9` and `totals_after` is `[4, 7, 9]`.
+                - `first_wrong_visit` identifies the earliest difference in the original trace, not the repaired one.
+
+                Check:
+                Choose **Check solution**. Named cases check the original amounts, an empty list, one amount, and negative and zero amounts. Separate rows compare the integer `total` and the ordered `totals_after` trace. Every row reruns your code from a fresh start. A failure stops the check and leaves later rows not reached; the original checks must pass too.
+
+                Keep `first_wrong_visit` as your diagnosis of the original starter with `[4, 3, 2]`, regardless of the other cases or experiments. Only the original checks assess that prediction; the visit number alone does not demonstrate a working accumulator.
+
+                Keep the supplied input line unchanged. To try your own case, enter a Python literal list in the Experiment field `amounts`, such as `[2, 0, 5]`, then choose **Run experiment**. This shows results without changing your draft, awarding XP, or completing the exercise.
+                """,
+                     "amounts = [4, 3, 2]\nfirst_wrong_visit = 0\ntotal = 0\ntotals_after = []\nfor amount in amounts:\n    total = 0\n    total += amount\n    totals_after.append(total)\n",
+                     "amounts = [4, 3, 2]\nfirst_wrong_visit = 2\ntotal = 0\ntotals_after = []\nfor amount in amounts:\n    total += amount\n    totals_after.append(total)\n",
+                     "assert amounts == [4, 3, 2]\nassert type(first_wrong_visit) is int and first_wrong_visit == 2\nassert type(total) is int and total == 9\nassert totals_after == [4, 7, 9]\n",
+                     ["Compare one visit at a time. The first amount alone cannot reveal whether earlier work will survive the next visit.", "The first visit correctly produces 4. The second should produce 7, but the original produces 3: inspect every assignment made during visit 2.", "Save `2` as the original first wrong visit. Initialize `total` only before the loop, remove its reset inside the loop, and keep appending after each addition."],
+                     effort: .init(difficulty: .similar, scopeUnits: 2),
+                     checkPlan: .init(inputs: [
+                        .init(name: "amounts", defaultLiteral: "[4, 3, 2]")
+                     ], checks: [
+                        .init(id: "original-total", title: "Original amounts: total", target: "total", expectedLiteral: "9"),
+                        .init(id: "original-trace", title: "Original amounts: totals after each visit", target: "totals_after", expectedLiteral: "[4, 7, 9]"),
+                        .init(id: "empty-total", title: "Empty input: total", inputs: ["amounts": "[]"], target: "total", expectedLiteral: "0"),
+                        .init(id: "empty-trace", title: "Empty input: totals after each visit", inputs: ["amounts": "[]"], target: "totals_after", expectedLiteral: "[]"),
+                        .init(id: "single-total", title: "One amount: total", inputs: ["amounts": "[5]"], target: "total", expectedLiteral: "5"),
+                        .init(id: "single-trace", title: "One amount: totals after each visit", inputs: ["amounts": "[5]"], target: "totals_after", expectedLiteral: "[5]"),
+                        .init(id: "negative-zero-total", title: "Negative and zero amounts: total", inputs: ["amounts": "[4, -3, 0, 2]"], target: "total", expectedLiteral: "3"),
+                        .init(id: "negative-zero-trace", title: "Negative and zero amounts: totals after each visit", inputs: ["amounts": "[4, -3, 0, 2]"], target: "totals_after", expectedLiteral: "[4, 1, 1, 3]")
+                     ])),
+            exercise("loops-predict-threshold", "Predict and debug: stop at the target", """
+                Goal:
+                Predict a loop's sequence and repair its stopping behavior. The starter finishes above the target even though it reached that target on an earlier visit.
+
+                Starting code:
+                - `start_value = 2` and `target = 8` are fixed inputs, both positive integers.
+                - The loop doubles `value` and appends each new value to `visited`.
+                - `predicted_before = []` is a placeholder for your prediction of the original loop's recorded sequence.
+
+                Your task:
+                1. Before running, save your predicted original sequence in `predicted_before` as a list of integers.
+                2. Run the original and compare that prediction with `visited`.
+                3. Keep the original prediction and repair the loop: double only while the current value is below the target, stopping once it reaches or exceeds it.
+                4. Record each value after doubling in `visited`, not the starting value. Keep the update that makes the loop progress, and calculate the sequence rather than hard-coding it.
+
+                Expected result:
+                - `predicted_before` records the original sequence, including any visit beyond the intended stop.
+                - After repair, `visited` is `[4, 8]` and `value` is `8`.
+                - With `target = 2`, the repaired loop would make no visits: `visited` would be `[]` and `value` would stay `2`.
+                - With `target = 5`, it would record `[4, 8]` and stop at `8`.
+
+                Check:
+                Choose **Check solution**. Named cases check the original inputs, an already reached target of `2`, an overshoot with target `5`, start `3` with target `12`, and start `10` already above target `8`. Separate rows compare the integer `value` and the ordered `visited` sequence. Every row reruns your code from a fresh start. A failure stops the check and leaves later rows not reached; the original checks must pass too.
+
+                Keep `predicted_before` as your prediction of the original starter with start `2` and target `8`, regardless of other cases or experiments. Only the original checks assess that prediction; a correct prediction alone does not prove the repair works generally.
+
+                Keep the supplied input lines unchanged. To try your own case, enter positive integer Python literal values in the Experiment fields `start_value` and `target`, such as `3` and `12`, then choose **Run experiment**. This shows results without changing your draft, awarding XP, or completing the exercise.
+                """,
+                     "start_value = 2\ntarget = 8\npredicted_before = []\nvalue = start_value\nvisited = []\nwhile value <= target:\n    value = value * 2\n    visited.append(value)\n",
+                     "start_value = 2\ntarget = 8\npredicted_before = [4, 8, 16]\nvalue = start_value\nvisited = []\nwhile value < target:\n    value = value * 2\n    visited.append(value)\n",
+                     "assert start_value == 2 and target == 8\nassert predicted_before == [4, 8, 16]\nassert visited == [4, 8]\nassert type(value) is int and value == 8\n",
+                     ["Trace the condition before each visit and the appended value after the update; those are different moments.", "In the original loop, equality at 8 still allows a visit. That visit doubles before appending, so the recorded sequence goes beyond 8.", "Keep `[4, 8, 16]` as the original prediction. Change the loop condition to `value < target` and retain the doubling and append inside the body."],
+                     effort: .init(difficulty: .similar, scopeUnits: 2),
+                     checkPlan: .init(inputs: [
+                        .init(name: "start_value", defaultLiteral: "2"),
+                        .init(name: "target", defaultLiteral: "8")
+                     ], checks: [
+                        .init(id: "original-value", title: "Original target: final value", target: "value", expectedLiteral: "8"),
+                        .init(id: "original-visited", title: "Original target: values visited", target: "visited", expectedLiteral: "[4, 8]"),
+                        .init(id: "already-reached-value", title: "Already at the target: final value", inputs: ["target": "2"], target: "value", expectedLiteral: "2"),
+                        .init(id: "already-reached-visited", title: "Already at the target: values visited", inputs: ["target": "2"], target: "visited", expectedLiteral: "[]"),
+                        .init(id: "overshoot-value", title: "Target between doublings: final value", inputs: ["target": "5"], target: "value", expectedLiteral: "8"),
+                        .init(id: "overshoot-visited", title: "Target between doublings: values visited", inputs: ["target": "5"], target: "visited", expectedLiteral: "[4, 8]"),
+                        .init(id: "different-start-value", title: "Start 3 with target 12: final value", inputs: ["start_value": "3", "target": "12"], target: "value", expectedLiteral: "12"),
+                        .init(id: "different-start-visited", title: "Start 3 with target 12: values visited", inputs: ["start_value": "3", "target": "12"], target: "visited", expectedLiteral: "[6, 12]"),
+                        .init(id: "above-target-value", title: "Start above the target: final value", inputs: ["start_value": "10"], target: "value", expectedLiteral: "10"),
+                        .init(id: "above-target-visited", title: "Start above the target: values visited", inputs: ["start_value": "10"], target: "visited", expectedLiteral: "[]")
+                     ])),
+            exercise("loops-transfer-water-log", "Summarize a garden water log", """
+                     Goal:
+                     Summarize an invented garden's watering records and collect the amounts meeting a chosen threshold. Choose your approach from the loops, decisions, and lists already taught.
+
+                     Starting code:
+                     - Keep the supplied input lines unchanged: `water_liters = [3, 7, 2, 7]` and `minimum_liters = 5`.
+                     - The log is a finite list of nonnegative integers, possibly empty, and the threshold is a nonnegative integer. No invalid values need handling.
+                     - Replace or extend the result placeholders `total_liters = 0`, `qualifying_count = 0`, and `qualifying_liters = []`. Keep the input list unchanged.
+
+                     Your task:
+                     1. Save the integer `total_liters` for every log entry, including amounts below the threshold.
+                     2. Save the integer `qualifying_count` and a new list `qualifying_liters` for entries at least `minimum_liters`, preserving their order and repeated values. Zero qualifies when the threshold is zero.
+
+                     Expected result:
+                     - The supplied inputs give `total_liters` equal to `19`, `qualifying_count` equal to `2`, and `qualifying_liters` equal to `[7, 7]`.
+                     - An empty log gives `0`, `0`, and `[]`.
+                     - Log `[0, 2, 0, 1]` with threshold `0` gives `3`, `4`, and `[0, 2, 0, 1]`.
+                     - Log `[1, 2]` with threshold `3` gives `3`, `0`, and `[]`.
+
+                     Check:
+                     Choose **Check solution**. Fresh named cases check the original total, each empty-log result, each zero-threshold result, and a list with no qualifying entries. Separate rows compare separate result variables; the original typed checks must pass too. A failed case leaves later cases not reached.
+
+                     To explore without changing your draft, awarding XP, or completing the exercise, enter Python literal values (directly written values such as `[0, 2]` and `0`) in the Experiment fields and choose **Run experiment**. Keep the supplied input lines unchanged for checking.
+                     """,
+                     "water_liters = [3, 7, 2, 7]\nminimum_liters = 5\ntotal_liters = 0\nqualifying_count = 0\nqualifying_liters = []\n",
+                     "water_liters = [3, 7, 2, 7]\nminimum_liters = 5\ntotal_liters = 0\nqualifying_count = 0\nqualifying_liters = []\nfor liters in water_liters:\n    total_liters += liters\n    if liters >= minimum_liters:\n        qualifying_count += 1\n        qualifying_liters.append(liters)\n",
+                     "assert water_liters == [3, 7, 2, 7] and minimum_liters == 5\nassert type(total_liters) is int and total_liters == 19\nassert type(qualifying_count) is int and qualifying_count == 2\nassert type(qualifying_liters) is list and qualifying_liters == [7, 7]\n",
+                     ["The total describes the whole log, while the count and list describe only qualifying entries. What should each result be before any entry is visited?", "Keep accumulated work between visits. The threshold comparison includes equality, and repeated entries are separate records.", "Initialize the total, count, and empty result list before a `for` loop. Add every amount to the total; when `liters >= minimum_liters`, increase the count and append that amount to the result list."],
+                     effort: .init(difficulty: .similar, scopeUnits: 2),
+                     checkPlan: .init(inputs: [
+                        .init(name: "water_liters", defaultLiteral: "[3, 7, 2, 7]"),
+                        .init(name: "minimum_liters", defaultLiteral: "5")
+                     ], checks: [
+                        .init(id: "original-total", title: "Original log: total includes small entries", target: "total_liters", expectedLiteral: "19"),
+                        .init(id: "empty-total", title: "Empty log: total", inputs: ["water_liters": "[]"], target: "total_liters", expectedLiteral: "0"),
+                        .init(id: "empty-count", title: "Empty log: qualifying count", inputs: ["water_liters": "[]"], target: "qualifying_count", expectedLiteral: "0"),
+                        .init(id: "empty-list", title: "Empty log: qualifying amounts", inputs: ["water_liters": "[]"], target: "qualifying_liters", expectedLiteral: "[]"),
+                        .init(id: "zero-threshold-total", title: "Zero threshold: total", inputs: ["water_liters": "[0, 2, 0, 1]", "minimum_liters": "0"], target: "total_liters", expectedLiteral: "3"),
+                        .init(id: "zero-threshold-count", title: "Zero threshold: zero entries also count", inputs: ["water_liters": "[0, 2, 0, 1]", "minimum_liters": "0"], target: "qualifying_count", expectedLiteral: "4"),
+                        .init(id: "zero-threshold-list", title: "Zero threshold: preserve order and repetitions", inputs: ["water_liters": "[0, 2, 0, 1]", "minimum_liters": "0"], target: "qualifying_liters", expectedLiteral: "[0, 2, 0, 1]"),
+                        .init(id: "no-qualifying-list", title: "All entries below the threshold", inputs: ["water_liters": "[1, 2]", "minimum_liters": "3"], target: "qualifying_liters", expectedLiteral: "[]")
+                     ]),
+                     practiceProfile: .init(form: .transfer, scaffolding: .independent,
+                                            skillIDs: ["loops-section-1", "loops-section-2", "decisions-section-1"],
+                                            reflectionPrompts: ["Which results depend on the threshold, and which do not?", "Why must a zero entry be counted when the threshold is zero?"]))
         ],
         assessment: exercise("loops-assessment", "Track consecutive passing checks", """
             Goal:

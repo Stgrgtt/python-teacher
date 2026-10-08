@@ -226,6 +226,114 @@ final class ProgressTests: XCTestCase {
         XCTAssertEqual(ExperienceRules.completionXP(effort: exercise.effort, mode: .practice), 100)
     }
 
+    func testOptionalPracticeProfilePreservesOlderExercisesAndSavedEvidence() throws {
+        let reviewed = Curriculum.chapters[0].exercises[0]
+        XCTAssertNotNil(reviewed.practiceProfile)
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(reviewed)) as? [String: Any])
+        json.removeValue(forKey: "practiceProfile")
+        let legacy = try JSONDecoder().decode(Exercise.self, from: JSONSerialization.data(withJSONObject: json))
+        var expected = reviewed
+        expected.practiceProfile = nil
+        XCTAssertNil(legacy.practiceProfile)
+        XCTAssertEqual(legacy, expected)
+        XCTAssertEqual(try JSONDecoder().decode(Exercise.self, from: JSONEncoder().encode(reviewed)), reviewed)
+        var state = ProgressState()
+        state.generatedExercises["basics"] = [legacy, reviewed]
+        let key = "basics:practice:\(reviewed.id)"
+        state.drafts[key] = "saved source remains unchanged"
+        state.reflections[key] = "My earlier explanation"
+        state.hintCounts[key] = 2
+        state.revealedSolutions.insert(key)
+        state.attempts = [practiceAttempt(), masteryAttempt(chapter: "basics")]
+        try store.save(state)
+        let loaded = try store.load()
+        XCTAssertEqual(loaded.generatedExercises, state.generatedExercises)
+        XCTAssertEqual(loaded.drafts, state.drafts)
+        XCTAssertEqual(loaded.reflections, state.reflections)
+        XCTAssertEqual(loaded.hintCounts, state.hintCounts)
+        XCTAssertEqual(loaded.revealedSolutions, state.revealedSolutions)
+        XCTAssertEqual(loaded.attempts.map(\.id), state.attempts.map(\.id))
+        XCTAssertEqual(loaded.attempts.map(\.code), state.attempts.map(\.code))
+        XCTAssertEqual(loaded.masteredChapterIDs, state.masteredChapterIDs)
+        XCTAssertEqual(loaded.playerProgress, state.playerProgress)
+        XCTAssertEqual(loaded.rewardPolicyVersion, state.rewardPolicyVersion)
+        XCTAssertEqual(loaded.schemaVersion, state.schemaVersion)
+    }
+
+    func testUnrecognizedPracticeProfilePreservesUnreadableProgress() throws {
+        var state = ProgressState()
+        state.generatedExercises["basics"] = [Curriculum.chapters[0].exercises[0]]
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(state)) as? [String: Any])
+        var generated = try XCTUnwrap(json["generatedExercises"] as? [String: Any])
+        var exercises = try XCTUnwrap(generated["basics"] as? [[String: Any]])
+        var profile = try XCTUnwrap(exercises[0]["practiceProfile"] as? [String: Any])
+        profile["form"] = "unsupported-future-form"
+        exercises[0]["practiceProfile"] = profile
+        generated["basics"] = exercises
+        json["generatedExercises"] = generated
+        let data = try JSONSerialization.data(withJSONObject: json)
+        try install(data)
+        XCTAssertThrowsError(try store.load())
+        XCTAssertThrowsError(try store.save(ProgressState()))
+        XCTAssertEqual(try Data(contentsOf: stateURL), data)
+    }
+
+    func testAuthoredCheckPlanRoundTripsWithoutChangingLegacyExerciseOrProgress() throws {
+        var exercise = Curriculum.chapters[0].exercises[0]
+        let original = exercise
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(exercise)) as? [String: Any])
+        json.removeValue(forKey: "checkPlan")
+        let legacy = try JSONDecoder().decode(Exercise.self, from: JSONSerialization.data(withJSONObject: json))
+        XCTAssertNil(legacy.checkPlan)
+        XCTAssertEqual(legacy, original)
+        exercise.checkPlan = AuthoredCheckPlan(inputs: [.init(name: "amount", defaultLiteral: "2")],
+            checks: [.init(id: "double", title: "Double the amount", inputs: ["amount": "3"], target: "total", expectedLiteral: "6")])
+        try exercise.checkPlan?.validate()
+        XCTAssertEqual(try JSONDecoder().decode(Exercise.self, from: JSONEncoder().encode(exercise)), exercise)
+        var state = ProgressState()
+        state.generatedExercises["basics"] = [exercise, legacy]
+        state.drafts["basics:practice:\(exercise.id)"] = "saved draft"
+        state.attempts = [practiceAttempt(), masteryAttempt(chapter: "basics")]
+        try store.save(state)
+        let restored = try store.load()
+        XCTAssertEqual(restored.generatedExercises, state.generatedExercises)
+        XCTAssertEqual(restored.drafts, state.drafts)
+        XCTAssertEqual(restored.attempts.map(\.id), state.attempts.map(\.id))
+        XCTAssertEqual(restored.attempts.map(\.code), state.attempts.map(\.code))
+        XCTAssertEqual(restored.masteredChapterIDs, state.masteredChapterIDs)
+        XCTAssertEqual(restored.playerProgress, state.playerProgress)
+        XCTAssertEqual(restored.rewardPolicyVersion, state.rewardPolicyVersion)
+        XCTAssertEqual(restored.schemaVersion, state.schemaVersion)
+    }
+
+    func testNamedCheckPlanStructuralValidationRejectsAmbiguityAndUnboundedMetadata() throws {
+        let input = ExerciseInput(name: "amount", defaultLiteral: "2")
+        let check = NamedCheck(id: "base", title: "Base result", target: "total", expectedLiteral: "4")
+        let plan = AuthoredCheckPlan(inputs: [input], checks: [check])
+        XCTAssertNoThrow(try plan.validate(overrides: ["amount": "3"]))
+        XCTAssertThrowsError(try plan.validate(overrides: ["other": "3"]))
+        XCTAssertThrowsError(try plan.validate(overrides: ["amount": " "]))
+        XCTAssertThrowsError(try plan.validate(overrides: ["amount": String(repeating: "0", count: 2_049)]))
+        let invalidPlans = [
+            AuthoredCheckPlan(inputs: [input, input], checks: [check]),
+            AuthoredCheckPlan(inputs: [input], checks: []),
+            AuthoredCheckPlan(inputs: [input], checks: [check, check]),
+            AuthoredCheckPlan(inputs: (0..<9).map { .init(name: "input\($0)", defaultLiteral: "0") }, checks: [check]),
+            AuthoredCheckPlan(inputs: [input], checks: (0..<17).map { .init(id: "case-\($0)", title: "Result", target: "total", expectedLiteral: "0") }),
+            AuthoredCheckPlan(inputs: [.init(name: "amount", defaultLiteral: "")], checks: [check]),
+            AuthoredCheckPlan(inputs: [input], checks: [.init(id: "bad\n", title: "Result", target: "total", expectedLiteral: "4")]),
+            AuthoredCheckPlan(inputs: [input], checks: [.init(id: "base", title: " ", target: "total", expectedLiteral: "4")]),
+            AuthoredCheckPlan(inputs: [input], checks: [.init(id: "base", title: "Bad\nlabel", target: "total", expectedLiteral: "4")]),
+            AuthoredCheckPlan(inputs: [input], checks: [.init(id: "base", title: "Result", inputs: ["unknown": "1"], target: "total", expectedLiteral: "4")]),
+            AuthoredCheckPlan(inputs: [input], checks: [.init(id: "base", title: "Result", target: "total", expectedLiteral: "")])
+        ]
+        for invalid in invalidPlans { XCTAssertThrowsError(try invalid.validate()) }
+        for name in ["x()", "x.y", "x[0]", "x\n", "1x", "for", "None", "__builtins__", String(repeating: "x", count: 65)] {
+            XCTAssertThrowsError(try AuthoredCheckPlan(inputs: [.init(name: name, defaultLiteral: "0")], checks: [check]).validate(), name)
+            XCTAssertThrowsError(try AuthoredCheckPlan(inputs: [input], checks: [.init(id: "base", title: "Result", target: name, expectedLiteral: "0")]).validate(), name)
+        }
+    }
+
     func testSavedEvidenceContinuesBeyondLevel100WithoutMigration() throws {
         var state = ProgressState()
         state.attempts = (0..<900).map { masteryAttempt(chapter: "historical-\($0)") }
