@@ -1,12 +1,51 @@
 import Foundation
 import Darwin
 
+public struct RunDiagnostic: Codable, Equatable, Sendable {
+    public enum Origin: String, Codable, Sendable {
+        case learner, checks, runner
+    }
+
+    public struct Frame: Codable, Equatable, Sendable {
+        public let line: Int
+        public let function: String
+
+        public init(line: Int, function: String) {
+            self.line = line
+            self.function = function
+        }
+    }
+
+    public let exceptionType: String
+    public let message: String
+    public let origin: Origin
+    public let frames: [Frame]
+    public var learnerLine: Int? { frames.last?.line }
+
+    public init(exceptionType: String, message: String, origin: Origin, frames: [Frame]) {
+        self.exceptionType = exceptionType
+        self.message = message
+        self.origin = origin
+        self.frames = frames
+    }
+}
+
 public struct RunResult: Sendable {
     public let output: String
     public let exitCode: Int32
     public let passed: Bool
     public let timedOut: Bool
     public let cancelled: Bool
+    public let diagnostic: RunDiagnostic?
+
+    public init(output: String, exitCode: Int32, passed: Bool, timedOut: Bool, cancelled: Bool, diagnostic: RunDiagnostic? = nil) {
+        self.output = output
+        self.exitCode = exitCode
+        self.passed = passed
+        self.timedOut = timedOut
+        self.cancelled = cancelled
+        self.diagnostic = diagnostic
+    }
 }
 
 public enum PythonRunnerError: LocalizedError, Sendable {
@@ -164,7 +203,19 @@ public final class PythonRunner: @unchecked Sendable {
         let interpreter = try resolveInterpreter(pythonPath, environment: environment, control: control)
         if control.flags.cancelled { return stoppedResult(control) }
         let token = "\n__PYTHON_TEACHER_COMPLETE_\(UUID().uuidString.replacingOccurrences(of: "-", with: ""))__\n"
-        let script = harness(learner: learner.path, tests: tests == nil ? nil : testFile.path, token: token)
+        let nonce = UUID().uuidString.replacingOccurrences(of: "-", with: "")
+        let diagnosticStart = "\n__PYTHON_TEACHER_DIAGNOSTIC_\(nonce)_BEGIN__"
+        let diagnosticEnd = "__PYTHON_TEACHER_DIAGNOSTIC_\(nonce)_END__\n"
+        var learnerLineCount = 1
+        var previousByte: UInt8 = 0
+        for byte in code.utf8 {
+            if byte == 13 || (byte == 10 && previousByte != 13) {
+                learnerLineCount = min(1_000_000, learnerLineCount + 1)
+            }
+            previousByte = byte
+        }
+        let script = harness(learner: learner.path, tests: tests == nil ? nil : testFile.path, token: token,
+            diagnosticStart: diagnosticStart, diagnosticEnd: diagnosticEnd, learnerLineCount: learnerLineCount)
         let input = Pipe()
         let output = Pipe()
         defer {
@@ -203,7 +254,8 @@ public final class PythonRunner: @unchecked Sendable {
             throw POSIXError(.EIO)
         }
         let deadline = ProcessInfo.processInfo.systemUptime + timeout
-        var capture = OutputCapture(marker: Data(token.utf8))
+        var capture = OutputCapture(marker: Data(token.utf8), diagnosticStart: Data(diagnosticStart.utf8),
+            diagnosticEnd: Data(diagnosticEnd.utf8), learnerLineCount: learnerLineCount)
         var bytes = [UInt8](repeating: 0, count: 8192)
         while true {
             for _ in 0..<16 {
@@ -238,7 +290,8 @@ public final class PythonRunner: @unchecked Sendable {
         if text.contains("sandbox-exec:") && !capture.completed {
             text += "\n[Sandboxed execution failed. No unrestricted fallback was attempted.]\n"
         }
-        return RunResult(output: text, exitCode: process.terminationStatus, passed: passed, timedOut: flags.timedOut, cancelled: flags.cancelled)
+        return RunResult(output: text, exitCode: process.terminationStatus, passed: passed, timedOut: flags.timedOut,
+            cancelled: flags.cancelled, diagnostic: passed || flags.timedOut || flags.cancelled ? nil : capture.diagnostic)
     }
 
     private func stoppedResult(_ control: RunControl) -> RunResult {
@@ -376,7 +429,7 @@ public final class PythonRunner: @unchecked Sendable {
         "\"" + string.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"").replacingOccurrences(of: "\n", with: "\\n").replacingOccurrences(of: "\r", with: "\\r") + "\""
     }
 
-    private func harness(learner: String, tests: String?, token: String) -> String {
+    private func harness(learner: String, tests: String?, token: String, diagnosticStart: String, diagnosticEnd: String, learnerLineCount: Int) -> String {
         let testsLiteral = tests.map(quoted) ?? "None"
         return """
         def __python_teacher_main():
@@ -385,8 +438,47 @@ public final class PythonRunner: @unchecked Sendable {
             import runpy
             import sys
             import traceback
+            import json
+            import re
             stdout, stderr, terminate = sys.stdout, sys.stderr, os._exit
             completed = \(quoted(token))
+            learner_path = \(quoted(learner))
+            test_path = \(testsLiteral)
+            stage = 'runner'
+            def bounded_text(value, limit):
+                text = str(value).encode('utf-8', 'replace')[:limit].decode('utf-8', 'ignore')
+                text = re.sub(r'''(?<![\\w/])/[\\w.~][^\\s'"<>:;]*''', '[path]', text)
+                text = ''.join(character if character >= ' ' else ' ' for character in text)
+                return text.encode('utf-8', 'replace')[:limit].decode('utf-8', 'ignore')
+            def emit_diagnostic(error):
+                frames = []
+                origin = stage
+                current = error.__traceback__
+                while current is not None:
+                    filename = current.tb_frame.f_code.co_filename
+                    if filename == learner_path:
+                        origin = 'learner'
+                        line = current.tb_lineno
+                        if type(line) is int and 0 < line <= \(learnerLineCount):
+                            frames.append({'line': line, 'function': bounded_text(current.tb_frame.f_code.co_name, 128)})
+                            frames = frames[-32:]
+                    elif filename == test_path:
+                        origin = 'checks'
+                    current = current.tb_next
+                if isinstance(error, SyntaxError) and error.filename == learner_path:
+                    origin = 'learner'
+                    if type(error.lineno) is int and 0 < error.lineno <= \(learnerLineCount):
+                        frames = [{'line': error.lineno, 'function': '<module>'}]
+                if origin != 'learner':
+                    frames = []
+                if origin == 'checks':
+                    message = 'An exercise check failed. See the original output for details.'
+                else:
+                    message = bounded_text(error.msg if isinstance(error, SyntaxError) else error, 4000)
+                diagnostic = {'exceptionType': bounded_text(type(error).__name__, 128), 'message': message, 'origin': origin, 'frames': frames}
+                payload = json.dumps(diagnostic, ensure_ascii=False, separators=(',', ':'))
+                if len(payload.encode('utf-8')) <= 16384:
+                    stderr.write(\(quoted(diagnosticStart)) + payload + \(quoted(diagnosticEnd)))
             status = 1
             try:
                 try:
@@ -399,11 +491,11 @@ public final class PythonRunner: @unchecked Sendable {
                             raise RuntimeError("Resource limit verification failed.")
                 except (ImportError, OSError, ValueError, RuntimeError) as error:
                     raise RuntimeError("Could not apply required Python resource safeguards; learner execution was stopped.") from error
-                test_path = \(testsLiteral)
                 checked = set()
                 assertion_count = 0
                 counter_name = "__ct_check_\(UUID().uuidString.replacingOccurrences(of: "-", with: ""))"
                 if test_path is not None:
+                    stage = 'checks'
                     with open(test_path, encoding="utf-8") as source:
                         tree = ast.parse(source.read(), filename=test_path)
                     class InstrumentAssertions(ast.NodeTransformer):
@@ -415,19 +507,28 @@ public final class PythonRunner: @unchecked Sendable {
                             return [node, ast.copy_location(record, node)]
                     tree = InstrumentAssertions().visit(tree)
                     if assertion_count == 0:
+                        stage = 'runner'
                         raise RuntimeError("Tests must contain executable assert statements; no assertions were provided.")
                     compiled_tests = compile(ast.fix_missing_locations(tree), test_path, "exec")
-                namespace = runpy.run_path(\(quoted(learner)), run_name="__main__")
+                stage = 'learner'
+                namespace = runpy.run_path(learner_path, run_name="__main__")
+                stage = 'runner'
                 if test_path is not None:
                     namespace[counter_name] = checked.add
+                    stage = 'checks'
                     exec(compiled_tests, namespace, namespace)
+                    stage = 'runner'
                     if len(checked) != assertion_count:
                         raise RuntimeError("Tests skipped assertions: executed %d of %d assertion sites." % (len(checked), assertion_count))
                     stdout.write("Tests passed (%d assertions).\\n" % assertion_count)
                 stdout.write(completed)
                 status = 0
-            except BaseException:
+            except BaseException as error:
                 traceback.print_exc(file=stderr)
+                try:
+                    emit_diagnostic(error)
+                except BaseException:
+                    pass
             finally:
                 try:
                     stdout.flush()
@@ -473,28 +574,86 @@ private final class RunControl: @unchecked Sendable {
     }
 }
 
-private struct OutputCapture {
+struct OutputCapture {
     let marker: Data
+    private let diagnosticStart: Data
+    private let diagnosticEnd: Data
+    private let learnerLineCount: Int
     private var pending = Data()
     private var stored = Data()
     private var truncated = false
     private(set) var completed = false
+    private(set) var diagnostic: RunDiagnostic?
     private let limit = 64 * 1024
+    private let diagnosticLimit = 16 * 1024
 
-    init(marker: Data) { self.marker = marker }
+    init(marker: Data, diagnosticStart: Data, diagnosticEnd: Data, learnerLineCount: Int) {
+        self.marker = marker
+        self.diagnosticStart = diagnosticStart
+        self.diagnosticEnd = diagnosticEnd
+        self.learnerLineCount = min(1_000_000, learnerLineCount)
+    }
 
     mutating func consume(_ data: Data) {
-        pending.append(data)
-        while let range = pending.range(of: marker) {
-            store(Data(pending[..<range.lowerBound]))
-            pending.removeSubrange(pending.startIndex..<range.upperBound)
-            completed = true
+        var offset = data.startIndex
+        while offset < data.endIndex {
+            let end = min(offset + 8192, data.endIndex)
+            pending.append(data[offset..<end])
+            drainPending()
+            offset = end
         }
-        let safeCount = max(0, pending.count - marker.count + 1)
-        if safeCount > 0 {
-            store(Data(pending.prefix(safeCount)))
-            pending.removeFirst(safeCount)
+    }
+
+    private mutating func drainPending() {
+        while !pending.isEmpty {
+            let completion = pending.range(of: marker)
+            let start = pending.range(of: diagnosticStart)
+            if let completion, completion.lowerBound < (start?.lowerBound ?? pending.endIndex) {
+                store(Data(pending[..<completion.lowerBound]))
+                pending.removeSubrange(pending.startIndex..<completion.upperBound)
+                completed = true
+                continue
+            }
+            if let start {
+                store(Data(pending[..<start.lowerBound]))
+                pending.removeSubrange(pending.startIndex..<start.lowerBound)
+                let payloadStart = pending.startIndex + diagnosticStart.count
+                if let end = pending.range(of: diagnosticEnd, in: payloadStart..<pending.endIndex) {
+                    let payload = Data(pending[payloadStart..<end.lowerBound])
+                    if payload.count <= diagnosticLimit, let decoded = validatedDiagnostic(payload) {
+                        diagnostic = decoded
+                    } else {
+                        store(Data(pending[..<end.upperBound]))
+                    }
+                    pending.removeSubrange(pending.startIndex..<end.upperBound)
+                    continue
+                }
+                if pending.count <= diagnosticStart.count + diagnosticLimit + diagnosticEnd.count - 1 { return }
+                store(Data(pending.prefix(diagnosticStart.count)))
+                pending.removeFirst(diagnosticStart.count)
+                continue
+            }
+            let safeCount = max(0, pending.count - max(marker.count, diagnosticStart.count) + 1)
+            if safeCount > 0 {
+                store(Data(pending.prefix(safeCount)))
+                pending.removeFirst(safeCount)
+            }
+            return
         }
+    }
+
+    private func validatedDiagnostic(_ data: Data) -> RunDiagnostic? {
+        guard let value = try? JSONDecoder().decode(RunDiagnostic.self, from: data),
+              !value.exceptionType.isEmpty, value.exceptionType.utf8.count <= 128,
+              value.message.utf8.count <= 4096, value.frames.count <= 32,
+              value.origin == .learner || value.frames.isEmpty,
+              !value.exceptionType.contains("/"),
+              value.message.range(of: #"(?<![\w/])/[\w.~][^\s'"<>:;]*"#, options: .regularExpression) == nil,
+              value.frames.allSatisfy({
+                  $0.line > 0 && $0.line <= learnerLineCount && !$0.function.isEmpty
+                      && $0.function.utf8.count <= 128 && !$0.function.contains("/")
+              }) else { return nil }
+        return value
     }
 
     mutating func finish() {

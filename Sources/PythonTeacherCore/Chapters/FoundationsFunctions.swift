@@ -252,20 +252,106 @@ extension Curriculum {
 
         ## Test a hypothesis
 
-        Call your function with at least three kinds of input:
+        ### Debugging systematically
 
-        - a typical case
-        - an empty or zero case
-        - an exact boundary
+        Debugging means gathering evidence about why a program breaks its contract, not changing lines at random. Start with two separate statements: **expected** behavior from the contract and **observed** behavior from the run.
 
-        Run it twice with different inputs to uncover stale global state.
+        Suppose a function promises the integer total of a list of integers, including `0` for an empty list. This faulty example is shown as text, not as a runnable lesson block:
 
-        ### When a test fails
+        ```text
+        def reading_total(values):
+            return values[0] + values[1]
 
-        1. Shrink the failing case to the smallest example that still fails.
-        2. State your prediction.
-        3. Change one relevant line.
-        4. Rerun all tests, not only the previously failing one.
+        def report_total(values):
+            return reading_total(values)
+
+        report_total([])
+        ```
+
+        Expected: the call returns the integer `0`. Observed: it stops with `IndexError` and returns no result. That is different from returning a wrong number or returning `None` normally.
+
+        ### Find a minimal failing call
+
+        A **reproduction** is a call that reliably shows the problem. Remove unrelated items while checking that the failure still happens. Here `report_total([])` already fails with no items: it is a minimal failing call. Keep it as evidence, rather than replacing it with a large example that is harder to trace.
+
+        ### Read a multi-frame traceback
+
+        A traceback lists the calls still active when an exception occurred. Each file-and-line entry is a **frame**. For the faulty example above, a traceback can look like this:
+
+        ```text
+        Traceback (most recent call last):
+          File "learner.py", line 7, in <module>
+            report_total([])
+          File "learner.py", line 5, in report_total
+            return reading_total(values)
+          File "learner.py", line 2, in reading_total
+            return values[0] + values[1]
+        IndexError: list index out of range
+        ```
+
+        1. Read the final line for the exception type and message: an index does not exist.
+        2. Find the last learner frame: line 2 is where this run failed.
+        3. Walk upward to see how execution arrived there: `report_total` called `reading_total`, starting from the top-level call. `<module>` means code outside a function.
+        4. Inspect the arguments and local values at the failing operation. With `values` equal to `[]`, even index `0` is unavailable.
+
+        Line numbers refer to that exact source version. App checks may also appear in a traceback; their lines are not lines to edit in your function. An `AssertionError` in a check means the observed result did not meet its expectation, so compare the call and returned value before guessing at the cause.
+
+        ### Follow arguments, local state, and return
+
+        A **probe** is a small observation used to test an idea. `print("arguments:", values)` labels the value it displays, making several observations easier to tell apart. Multiple arguments to `print` are separated by spaces in the output.
+
+        This standalone, working example shows the input, changing local accumulator, and the value received by the caller:
+
+        ```python
+        def reading_total(values):
+            print("arguments:", values)
+            total = 0
+            for value in values:
+                total += value
+                print("local value:", value, "total:", total)
+            return total
+
+        result = reading_total([6, 2])
+        print("returned:", result)
+        assert result == 8
+        ```
+
+        ```text
+        arguments: [6, 2]
+        local value: 6 total: 6
+        local value: 2 total: 8
+        returned: 8
+        ```
+
+        Printing a local total is not proof that the caller received it. Save the call's result and inspect that too. Each call has its own local `total`; the original input list stays unchanged.
+
+        For a list, an empty value is treated as false in a condition and a nonempty value as true. When `readings` is a list, `if not readings:` therefore checks the same empty case as `if len(readings) == 0:`. Follow that branch separately from calls that enter a loop.
+
+        ### One hypothesis, one focused change
+
+        A **hypothesis** is a specific explanation you can test: "The faulty function assumes two items exist, but the contract permits any list length." Predict that a loop starting with a zero total will handle both empty and longer lists. Use the smallest call to check that prediction, then make that focused repair rather than changing unrelated behavior.
+
+        ### Keep regression checks
+
+        A **regression** is a previously working case broken by a later change. After a repair, keep the failing example and rerun typical, empty, and boundary cases. Repeated calls with different arguments can expose leftover global state. Remove temporary probe prints once they have answered your question.
+
+        ```python
+        def reading_total(values):
+            total = 0
+            for value in values:
+                total += value
+            return total
+
+        assert reading_total([]) == 0
+        assert reading_total([0]) == 0
+        values = [6, 2, 3]
+        assert reading_total(values) == 11
+        assert values == [6, 2, 3]
+        assert reading_total([4]) == 4
+        assert reading_total(values) == 11
+        ```
+
+        These checks pass silently. They support the contract beyond the one call that originally failed.
         """,
         exercises: [
             exercise("functions-batches", "Reusable batch sizing", """
@@ -363,7 +449,68 @@ extension Curriculum {
                      "def preview(text, max_chars, marker='...'):\n    return text\n",
                      "def preview(text, max_chars, marker='...'):\n    if len(text) <= max_chars:\n        return text\n    return text[:max_chars] + marker\n",
                      "assert preview('', 0) == ''\nassert preview('demo', 4) == 'demo'\nassert preview('demo', 8) == 'demo'\nassert preview('demo', 0) == '...'\nassert preview('Synthetic prompt', 9) == 'Synthetic...'\nassert preview('  AI', 2) == '  ...'\nassert preview('demo', 2, marker='>') == 'de>'\nassert preview('demo', 2, '~') == 'de~'\nassert preview(text='demo', max_chars=3) == 'dem...'\nassert preview(marker='', max_chars=1, text='demo') == 'd'\nassert preview('demo', 4, marker='!') == 'demo'\n",
-                     ["Text that already fits, including an exact-length match, must be returned unchanged without a marker. Separate that case from text that needs shortening.", "A slice with no start begins at the first character; its stop is excluded. Using the character limit as that stop takes at most that many characters without changing their spaces or case.", "Join the `marker` parameter, not a fixed `'...'`, to a shortened result; the default in the definition supplies the dots when the caller omits it. With a zero character limit the kept portion is empty, but the marker is still needed if the original text was nonempty."])
+                     ["Text that already fits, including an exact-length match, must be returned unchanged without a marker. Separate that case from text that needs shortening.", "A slice with no start begins at the first character; its stop is excluded. Using the character limit as that stop takes at most that many characters without changing their spaces or case.", "Join the `marker` parameter, not a fixed `'...'`, to a shortened result; the default in the definition supplies the dots when the caller omits it. With a zero character limit the kept portion is empty, but the marker is still needed if the original text was nonempty."]),
+            exercise("functions-debug-return", "Diagnose a caller's missing result", """
+                     Goal:
+                     Repair `count_ready(readings, minimum)` so its caller receives the integer number of readings at least `minimum`.
+
+                     Starting code:
+                     - Keep the function name and both parameters. The body is an attempted implementation, not a placeholder.
+                     - The empty-list call returns `0`, but `count_ready([4], 4)` unexpectedly returns `None` instead of `1`.
+                     - The checker supplies valid lists of integers and an integer minimum. No invalid-input validation is needed.
+
+                     Your task:
+                     1. Reproduce the reported call and compare the expected result with the value received by the caller.
+                     2. Use a labeled print as a temporary probe if needed to compare the local count with the returned value.
+                     3. Form one hypothesis and repair the function without replacing its arguments with example data.
+                     4. Count every reading at least `minimum`, including equality and repeated readings. Return an integer; printing does not satisfy the contract.
+                     5. Return `0` for an empty list and leave the supplied list's items and order unchanged.
+                     6. Remove temporary probes and rerun empty, boundary, and repeated-call checks.
+
+                     Expected result:
+                     - `count_ready([4], 4)` returns the integer `1`.
+                     - `count_ready([3, 4, 5, 4], 4)` returns the integer `3`.
+                     - `count_ready([], 4)` and `count_ready([3], 4)` both return the integer `0`.
+                     - `count_ready([-2, 0, -2], -2)` returns the integer `3`.
+
+                     Check:
+                     Choose **Check solution**. It checks actual returned integers, empty and exact-boundary cases, mixed and repeated values, unchanged input, and fresh results across calls.
+                     """,
+                     "def count_ready(readings, minimum):\n    if not readings:\n        return 0\n    count = 0\n    for reading in readings:\n        if reading >= minimum:\n            count += 1\n",
+                     "def count_ready(readings, minimum):\n    if not readings:\n        return 0\n    count = 0\n    for reading in readings:\n        if reading >= minimum:\n            count += 1\n    return count\n",
+                     "assert count_ready([4], 4) == 1\nassert type(count_ready([4], 4)) is int\nassert count_ready([], 4) == 0\nassert type(count_ready([], 4)) is int\nassert count_ready([3], 4) == 0\nreadings = [3, 4, 5, 4]\nassert count_ready(readings, 4) == 3\nassert type(count_ready(readings, 4)) is int\nassert readings == [3, 4, 5, 4]\nassert count_ready([-2, 0, -2], -2) == 3\nassert count_ready([0], 1) == 0\nassert count_ready(readings, 5) == 1\nassert count_ready(readings, 4) == 3\nassert readings == [3, 4, 5, 4]\n",
+                     ["Separate the local calculation from the caller's result. Does the reported one-item call take the same path as the empty-list call?", "Save the call in a variable and print it with a label. A local count can be correct even when the caller receives None.", "Follow every path to the end of the function. After all loop visits, send the accumulated count back with return; keep the empty-list result and do not stop after only one reading."],
+                     effort: .init(scopeUnits: 1)),
+            exercise("functions-predict-counterexample", "Predict a minimal counterexample", """
+                     Goal:
+                     Find evidence against an attempted title-length counter, predict its result, and then repair it. `count_short_titles(titles, max_chars)` must return the integer number of strings whose length is at most `max_chars`.
+
+                     Starting code:
+                     - Keep the function name and parameters. Inputs are a list of strings and a nonnegative integer limit; spaces count as characters.
+                     - The starter returns the expected results for `count_short_titles([], 0)` and `count_short_titles(['a'], 2)`, but a reviewer reports incorrect counts for other valid calls.
+                     - `counterexample`, `predicted_count`, and `expected_count` are evidence placeholders to replace, not inputs to hardcode inside the function.
+
+                     Your task:
+                     1. Before repairing the function, find a smallest failing list when `max_chars` is `0`: use the fewest strings and then the fewest total characters. Save that list as `counterexample`.
+                     2. Set integer `predicted_count` to what the original starter function would return for that list and limit `0`.
+                     3. Set integer `expected_count` to what the contract requires for the same call. These two saved counts must differ; keep this evidence after your repair.
+                     4. Repair the function to count every string with length at most the supplied limit. Include duplicates, preserve spaces and case, and do not change the input list.
+                     5. Return an integer count on every call, including `0` for an empty list. Use fresh local state each time.
+
+                     Expected result:
+                     - Your evidence describes a minimal failing call to the original starter; the repaired call returns `expected_count`.
+                     - `count_short_titles(['a', 'bb', 'ccc', 'bb'], 2)` returns the integer `3`.
+                     - `count_short_titles([' ', ''], 0)` returns the integer `1`.
+                     - `count_short_titles([], 3)` returns the integer `0`.
+
+                     Check:
+                     Choose **Check solution**. It checks the minimal counterexample and both predictions, then calls the repaired function with empty, exact-length, longer, duplicate, whitespace, and repeated-call cases while checking unchanged input.
+                     """,
+                     "def count_short_titles(titles, max_chars):\n    count = 0\n    for title in titles:\n        if len(title) < max_chars:\n            count += 1\n    return count\n\ncounterexample = []\npredicted_count = 0\nexpected_count = 0\n",
+                     "def count_short_titles(titles, max_chars):\n    count = 0\n    for title in titles:\n        if len(title) <= max_chars:\n            count += 1\n    return count\n\ncounterexample = ['']\npredicted_count = 0\nexpected_count = 1\n",
+                     "assert counterexample == [''], 'keep the smallest failing list as evidence'\nassert type(predicted_count) is int and predicted_count == 0\nassert type(expected_count) is int and expected_count == 1\nassert count_short_titles(counterexample, 0) == expected_count\nassert counterexample == ['']\nassert type(count_short_titles(counterexample, 0)) is int\nassert count_short_titles([], 3) == 0\nassert type(count_short_titles([], 3)) is int\ntitles = ['a', 'bb', 'ccc', 'bb']\nassert count_short_titles(titles, 2) == 3\nassert type(count_short_titles(titles, 2)) is int\nassert titles == ['a', 'bb', 'ccc', 'bb']\nassert count_short_titles([' ', ''], 0) == 1\nassert count_short_titles(['A B', '  ', 'AB'], 2) == 2\nassert count_short_titles(['abcd'], 3) == 0\nassert count_short_titles([''], 5) == 1\nassert count_short_titles(titles, 1) == 1\nassert count_short_titles(titles, 2) == 3\nassert titles == ['a', 'bb', 'ccc', 'bb']\n",
+                     ["A counterexample must make the observed and required results differ. The empty list gives zero under both rules, so it is not evidence of a failure.", "With a zero-character limit, try one string with no characters. Predict the original comparison before looking at the required phrase 'at most'.", "The minimal evidence list is ['']: save 0 as the original prediction and 1 as the required count. Then make the function include exact-length matches as well as shorter strings, without changing that evidence."],
+                     effort: .init(scopeUnits: 2))
         ],
         assessment: exercise("functions-assessment", "Find the first usable candidate", """
                              Goal:

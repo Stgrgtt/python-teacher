@@ -199,6 +199,7 @@ public struct Exercise: Codable, Identifiable, Equatable, Sendable {
     public var testCode: String
     public var hints: [String]
     public var effort: ExerciseEffort?
+    public var expectedStarterError: String?
 
     static let instructionSectionTitles = ["Goal", "Starting code", "Your task", "Expected result", "Check"]
 
@@ -220,7 +221,7 @@ public struct Exercise: Codable, Identifiable, Equatable, Sendable {
         }
     }
 
-    public init(id: String, title: String, instructions: String, starterCode: String, referenceSolution: String, testCode: String, hints: [String], effort: ExerciseEffort? = nil) {
+    public init(id: String, title: String, instructions: String, starterCode: String, referenceSolution: String, testCode: String, hints: [String], effort: ExerciseEffort? = nil, expectedStarterError: String? = nil) {
         self.id = id
         self.title = title
         self.instructions = instructions
@@ -229,6 +230,7 @@ public struct Exercise: Codable, Identifiable, Equatable, Sendable {
         self.testCode = testCode
         self.hints = hints
         self.effort = effort
+        self.expectedStarterError = expectedStarterError
     }
 }
 

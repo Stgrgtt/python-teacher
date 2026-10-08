@@ -10,6 +10,7 @@ final class AppModel: ObservableObject {
     @Published var progress: ProgressState
     @Published var code = "" {
         didSet {
+            editorRevealRequest = nil
             guard !loading else { return }
             progress.drafts[draftKey] = code
             if isOutputStale { feedback = "Code changed since the last run. The output below belongs to an earlier version; run checks again." }
@@ -26,6 +27,8 @@ final class AppModel: ObservableObject {
     @Published var output = "Run your code to see its output here."
     @Published var feedback = ""
     @Published var lastRunCode: String?
+    @Published var lastRunDiagnostic: RunDiagnostic?
+    @Published private(set) var editorRevealRequest: EditorRevealRequest?
     @Published var running = false
     @Published var teacherBusy = false
     @Published private(set) var updatingRewards = false
@@ -171,6 +174,34 @@ final class AppModel: ObservableObject {
     var builtInHintCount: Int { min(exercise.hints.count, max(0, progress.hintCounts[draftKey + ":builtin"] ?? 0)) }
     var canShowHint: Bool { builtInHintCount < exercise.hints.count }
     var isOutputStale: Bool { lastRunCode != nil && lastRunCode != code }
+    var diagnosticLine: Int? {
+        guard !isBusy, isUnlocked, lastRunCode == code,
+              let diagnostic = lastRunDiagnostic, diagnostic.origin == .learner,
+              let line = diagnostic.learnerLine, EditorRevealRequest.lineRange(line, in: code) != nil else { return nil }
+        return line
+    }
+    var diagnosticGuidance: String? {
+        guard mode != .assessment, !isBusy, lastRunCode == code,
+              let diagnostic = lastRunDiagnostic, diagnostic.origin == .learner else { return nil }
+        switch diagnostic.exceptionType {
+        case "SyntaxError": return "Python could not read this code. Check punctuation and matching quotes or brackets near the reported line."
+        case "IndentationError", "TabError": return "Indentation tells Python which lines belong together. Check the spaces at the start of this block."
+        case "NameError", "UnboundLocalError": return "A name has no value here. Check its spelling and where it is assigned before this line runs."
+        case "TypeError": return "An operation received a kind of value it cannot use. Compare the values and their types at this step."
+        case "ValueError": return "The kind of value was accepted, but its content was not. Check the value being converted or passed in."
+        case "IndexError": return "A sequence position is outside its available items. Python positions start at zero. Check the sequence length and the position used."
+        case "KeyError": return "A requested dictionary key is missing. Compare the key with the keys actually present."
+        case "AttributeError": return "This value does not provide the requested attribute or method. Check what kind of value it is."
+        case "ZeroDivisionError": return "A calculation tried to divide by zero. Check how the divisor gets its value."
+        case "AssertionError": return "A condition expected to be true was false. Compare the expected behavior with what happened."
+        default: return "Python stopped at an error. Read the final error message, form one hypothesis, then make one change and run again."
+        }
+    }
+
+    func revealDiagnosticLine() {
+        guard let line = diagnosticLine else { return }
+        editorRevealRequest = EditorRevealRequest(sourceIdentity: draftKey, source: code, line: line)
+    }
     var teacherHistory: [(role: String, text: String)] { messages.filter(\.includeInContext).map { (role: $0.role, text: $0.text) } }
     var solutionRevealed: Bool { progress.revealedSolutions.contains(draftKey) }
     var quizAnswers: [String: Int] { progress.quizAnswers[chapter.id] ?? [:] }
@@ -442,6 +473,8 @@ final class AppModel: ObservableObject {
         guard !isBusy else { return }
         code = exercise.starterCode
         lastRunCode = nil
+        lastRunDiagnostic = nil
+        editorRevealRequest = nil
         teacherRun = nil
         output = "Run your code to see its output here."
         feedback = "Starter restored. Previous submitted attempts remain in your history. Assistance and solution history is preserved."
@@ -472,6 +505,8 @@ final class AppModel: ObservableObject {
             }
         }
         running = true
+        lastRunDiagnostic = nil
+        editorRevealRequest = nil
         feedback = ""
         output = test || submit ? "Running checks in a restricted Python workspace…" : "Running Python…"
         let snapshot = code
@@ -489,6 +524,8 @@ final class AppModel: ObservableObject {
             do {
                 let result = try await runner.run(code: snapshot, tests: test || submit ? exercise.testCode : nil, pythonPath: path)
                 lastRunCode = snapshot
+                lastRunDiagnostic = result.diagnostic
+                editorRevealRequest = nil
                 output = result.output.isEmpty ? "Program finished without printed output." : result.output
                 let cancelled = result.cancelled || Task.isCancelled
                 teacherRun = TeacherRunEvidence(code: snapshot, operation: test || submit ? "Check solution" : "Run",
@@ -524,6 +561,8 @@ final class AppModel: ObservableObject {
                 }
             } catch {
                 lastRunCode = nil
+                lastRunDiagnostic = nil
+                editorRevealRequest = nil
                 output = Task.isCancelled ? "Execution cancelled." : error.localizedDescription
                 teacherRun = TeacherRunEvidence(code: snapshot, operation: test || submit ? "Check solution" : "Run",
                     outcome: Task.isCancelled ? "Cancelled" : "Execution could not complete",
@@ -798,6 +837,8 @@ final class AppModel: ObservableObject {
     private func resetWorkspace() {
         loadDraft()
         lastRunCode = nil
+        lastRunDiagnostic = nil
+        editorRevealRequest = nil
         teacherRun = nil
         output = "Run your code to see its output here."
         feedback = ""

@@ -350,6 +350,36 @@ extension Curriculum {
         > **Watch out:** Never remove items from the same list you are traversing; collect a new result instead.
 
         A correct program should match both its final answer and your step-by-step explanation.
+
+        ### Locate the first divergence
+
+        The **first divergence** is the earliest step where the observed state differs from the expected state. Number visits starting at 1 when explaining a trace; this is different from list indices, which start at 0.
+
+        You can save a trace as a list as well as print it. Append the current total after each update:
+
+        ```python
+        amounts = [2, 0, 5]
+        total = 0
+        totals_after = []
+        for amount in amounts:
+            total += amount
+            totals_after.append(total)
+        print(totals_after)
+        print(total)
+        ```
+
+        ```text
+        [2, 2, 7]
+        7
+        ```
+
+        If an attempted version produced `2`, `0`, `5` after those visits, the first divergence would be visit 2: adding zero should preserve the earlier 2. Inspect what ran during that visit, including any assignments before the update. Repair the earliest mismatch, then check later visits too.
+
+        ### Predict a stopping condition
+
+        For a `while` trace, write down the starting value, the condition before each visit, and the value after each update. Decide whether an exactly reached threshold should allow another visit. A condition checked before the body and a value recorded after the update describe different moments.
+
+        Prediction labs ask you to keep a separate prediction of the original sequence while repairing the loop. A saved prediction is evidence about reading that example, not proof of a general algorithm. Run a nearby threshold too, and restore the required inputs before checking. Keep the update that moves the loop toward stopping.
         """,
         exercises: [
             exercise("loops-total", "Count usable measurements", """
@@ -449,7 +479,63 @@ extension Curriculum {
                      "retry_count = 4\nbase_seconds = 2\nmax_wait = 20\ndelays = []\ntotal_wait = 0\n",
                      "retry_count = 4\nbase_seconds = 2\nmax_wait = 20\ndelays = []\ntotal_wait = 0\nretry_number = 0\nwhile retry_number < retry_count:\n    delay = base_seconds * (2 ** retry_number)\n    if total_wait + delay > max_wait:\n        break\n    delays.append(delay)\n    total_wait += delay\n    retry_number += 1\n",
                      "assert retry_count == 4 and base_seconds == 2 and max_wait == 20\nassert delays == [2, 4, 8]\nassert total_wait == 14\n",
-                     ["Retry numbers start at zero and stop before `retry_count`. `range(retry_count)` supplies them, or a `while` loop can count them with a variable that starts at 0 and increases by one each visit.", "`**` means raising to a power, not multiplication by the exponent. A power of zero gives 1, so the first delay is the base itself. `^` is a different operation and is not suitable here.", "Compute the delay first, then compare `total_wait` plus that delay with `max_wait` using `>` so an exact match is still allowed. When it is over the budget, `break` ends the loop; otherwise update both the list and the total."])
+                     ["Retry numbers start at zero and stop before `retry_count`. `range(retry_count)` supplies them, or a `while` loop can count them with a variable that starts at 0 and increases by one each visit.", "`**` means raising to a power, not multiplication by the exponent. A power of zero gives 1, so the first delay is the base itself. `^` is a different operation and is not suitable here.", "Compute the delay first, then compare `total_wait` plus that delay with `max_wait` using `>` so an exact match is still allowed. When it is over the budget, `break` ends the loop; otherwise update both the list and the total."]),
+            exercise("loops-debug-running-total", "Debug: find the first wrong total", """
+                Goal:
+                Repair a running total. The starter finishes with `2` rather than the total of all three amounts.
+
+                Starting code:
+                - `amounts = [4, 3, 2]` is the input list. Keep its values and order unchanged.
+                - `total` and `totals_after` attempt to record the sum and the sum after each visit.
+                - `first_wrong_visit = 0` is a placeholder for the first visit where the original trace disagrees with the intended running total. Count visits from 1.
+
+                Your task:
+                1. Predict the intended running total after each amount, then run the original code and inspect `totals_after`.
+                2. Save the number of the first mismatching visit in `first_wrong_visit`. Keep this diagnosis of the original even after the repair.
+                3. Repair the loop so `total` includes every amount and `totals_after` records the total after each update.
+                4. Use the loop to compute the results rather than assigning a fixed total or trace. An empty input would leave `total` at zero and the trace empty.
+
+                Expected result:
+                - The repaired `total` is the integer `9` and `totals_after` is `[4, 7, 9]`.
+                - `first_wrong_visit` identifies the earliest difference in the original trace, not the repaired one.
+
+                Check:
+                Choose **Check solution**. It checks the unchanged list, the original first-divergence answer, and the repaired total and trace for this example. The visit number alone does not demonstrate a working accumulator.
+                """,
+                     "amounts = [4, 3, 2]\nfirst_wrong_visit = 0\ntotal = 0\ntotals_after = []\nfor amount in amounts:\n    total = 0\n    total += amount\n    totals_after.append(total)\n",
+                     "amounts = [4, 3, 2]\nfirst_wrong_visit = 2\ntotal = 0\ntotals_after = []\nfor amount in amounts:\n    total += amount\n    totals_after.append(total)\n",
+                     "assert amounts == [4, 3, 2]\nassert type(first_wrong_visit) is int and first_wrong_visit == 2\nassert type(total) is int and total == 9\nassert totals_after == [4, 7, 9]\n",
+                     ["Compare one visit at a time. The first amount alone cannot reveal whether earlier work will survive the next visit.", "The first visit correctly produces 4. The second should produce 7, but the original produces 3: inspect every assignment made during visit 2.", "Save `2` as the original first wrong visit. Initialize `total` only before the loop, remove its reset inside the loop, and keep appending after each addition."],
+                     effort: .init(difficulty: .similar, scopeUnits: 2)),
+            exercise("loops-predict-threshold", "Predict and debug: stop at the target", """
+                Goal:
+                Predict a loop's sequence and repair its stopping behavior. The starter finishes above the target even though it reached that target on an earlier visit.
+
+                Starting code:
+                - `start_value = 2` and `target = 8` are fixed inputs, both positive integers.
+                - The loop doubles `value` and appends each new value to `visited`.
+                - `predicted_before = []` is a placeholder for your prediction of the original loop's recorded sequence.
+
+                Your task:
+                1. Before running, save your predicted original sequence in `predicted_before` as a list of integers.
+                2. Run the original and compare that prediction with `visited`.
+                3. Keep the original prediction and repair the loop: double only while the current value is below the target, stopping once it reaches or exceeds it.
+                4. Record each value after doubling in `visited`, not the starting value. Keep the update that makes the loop progress, and calculate the sequence rather than hard-coding it.
+
+                Expected result:
+                - `predicted_before` records the original sequence, including any visit beyond the intended stop.
+                - After repair, `visited` is `[4, 8]` and `value` is `8`.
+                - With `target = 2`, the repaired loop would make no visits: `visited` would be `[]` and `value` would stay `2`.
+                - With `target = 5`, it would record `[4, 8]` and stop at `8`.
+
+                Check:
+                Choose **Check solution**. It checks the original inputs, original-sequence prediction, and repaired results for target `8`. Try the other targets yourself, then restore `target = 8`; a correct prediction alone does not prove the repair works generally.
+                """,
+                     "start_value = 2\ntarget = 8\npredicted_before = []\nvalue = start_value\nvisited = []\nwhile value <= target:\n    value = value * 2\n    visited.append(value)\n",
+                     "start_value = 2\ntarget = 8\npredicted_before = [4, 8, 16]\nvalue = start_value\nvisited = []\nwhile value < target:\n    value = value * 2\n    visited.append(value)\n",
+                     "assert start_value == 2 and target == 8\nassert predicted_before == [4, 8, 16]\nassert visited == [4, 8]\nassert type(value) is int and value == 8\n",
+                     ["Trace the condition before each visit and the appended value after the update; those are different moments.", "In the original loop, equality at 8 still allows a visit. That visit doubles before appending, so the recorded sequence goes beyond 8.", "Keep `[4, 8, 16]` as the original prediction. Change the loop condition to `value < target` and retain the doubling and append inside the body."],
+                     effort: .init(difficulty: .similar, scopeUnits: 2))
         ],
         assessment: exercise("loops-assessment", "Track consecutive passing checks", """
             Goal:

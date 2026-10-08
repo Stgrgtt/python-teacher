@@ -27,10 +27,37 @@ struct CodeEditorFindCommands: Commands {
     }
 }
 
+struct EditorRevealRequest: Equatable {
+    let id = UUID()
+    let sourceIdentity: String
+    let source: String
+    let line: Int
+
+    static func lineRange(_ line: Int, in source: String) -> NSRange? {
+        guard line > 0 else { return nil }
+        let units = Array(source.utf16)
+        var current = 1
+        var start = 0
+        var index = 0
+        while index < units.count {
+            if units[index] == 10 || units[index] == 13 {
+                if current == line { return NSRange(location: start, length: index - start) }
+                if units[index] == 13, index + 1 < units.count, units[index + 1] == 10 { index += 1 }
+                current += 1
+                start = index + 1
+            }
+            index += 1
+        }
+        return current == line ? NSRange(location: start, length: units.count - start) : nil
+    }
+}
+
 struct CodeEditor: NSViewRepresentable {
     @Binding var text: String
     var editable: Bool = true
     var fontSize: CGFloat = 14
+    var sourceIdentity: String = ""
+    var revealRequest: EditorRevealRequest?
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -95,11 +122,24 @@ struct CodeEditor: NSViewRepresentable {
             context.coordinator.highlight(editor)
         }
         scroll.verticalRulerView?.needsDisplay = true
+        context.coordinator.reveal(in: editor)
     }
 
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: CodeEditor
+        private var handledRevealID: UUID?
         init(_ parent: CodeEditor) { self.parent = parent }
+
+        func reveal(in editor: NSTextView) {
+            guard let request = parent.revealRequest, request.id != handledRevealID else { return }
+            handledRevealID = request.id
+            guard !editor.hasMarkedText(), request.sourceIdentity == parent.sourceIdentity,
+                  request.source == parent.text, request.source == editor.string,
+                  let range = EditorRevealRequest.lineRange(request.line, in: editor.string) else { return }
+            editor.window?.makeFirstResponder(editor)
+            editor.setSelectedRange(range)
+            editor.scrollRangeToVisible(range)
+        }
 
         func textDidChange(_ notification: Notification) {
             guard let editor = notification.object as? NSTextView, !editor.hasMarkedText() else { return }

@@ -1403,6 +1403,144 @@ final class AppModelTests: XCTestCase {
     }
 
     @MainActor
+    func testRunDiagnosticTracksFailuresEditsAndSuccessfulReruns() async throws {
+        model.selectMode(.practice)
+        model.code = "print(missing_name)\n"
+        model.runCode()
+        try await waitForRun()
+        let diagnostic = try XCTUnwrap(model.lastRunDiagnostic)
+        XCTAssertEqual(diagnostic.exceptionType, "NameError")
+        XCTAssertEqual(diagnostic.origin, .learner)
+        XCTAssertEqual(model.diagnosticLine, 1)
+        XCTAssertNotNil(model.diagnosticGuidance)
+        XCTAssertTrue(model.output.contains("NameError"))
+        model.revealDiagnosticLine()
+        let first = try XCTUnwrap(model.editorRevealRequest)
+        model.revealDiagnosticLine()
+        XCTAssertNotEqual(model.editorRevealRequest?.id, first.id)
+        XCTAssertEqual(first.sourceIdentity, model.draftKey)
+        XCTAssertEqual(first.source, model.lastRunCode)
+        model.code = "print('fixed')\n"
+        XCTAssertTrue(model.isOutputStale)
+        XCTAssertEqual(model.lastRunDiagnostic, diagnostic)
+        XCTAssertNil(model.editorRevealRequest)
+        XCTAssertNil(model.diagnosticLine)
+        XCTAssertNil(model.diagnosticGuidance)
+        let staleCard = RunFailureCard(diagnostic: diagnostic, assessment: false, stale: true,
+                                       guidance: "outdated guidance", navigableLine: nil, reveal: {})
+        XCTAssertNil(staleCard.displayedGuidance)
+        XCTAssertNotNil(staleCard.displayedMessage)
+        model.revealDiagnosticLine()
+        XCTAssertNil(model.editorRevealRequest)
+        model.runCode()
+        XCTAssertNil(model.lastRunDiagnostic)
+        try await waitForRun()
+        XCTAssertNil(model.lastRunDiagnostic)
+        XCTAssertFalse(model.isOutputStale)
+        XCTAssertEqual(model.output.trimmingCharacters(in: .whitespacesAndNewlines), "fixed")
+        model.code = "raise ValueError('synthetic failure')\n"
+        model.runCode()
+        try await waitForRun()
+        XCTAssertEqual(model.lastRunDiagnostic?.exceptionType, "ValueError")
+        XCTAssertEqual(model.lastRunCode, model.code)
+    }
+
+    @MainActor
+    func testRunDiagnosticClearsOnResetNavigationAndRelaunch() throws {
+        func seed() {
+            model.lastRunCode = model.code
+            model.lastRunDiagnostic = RunDiagnostic(exceptionType: "NameError", message: "synthetic", origin: .learner,
+                                                     frames: [.init(line: 1, function: "<module>")])
+            model.revealDiagnosticLine()
+            XCTAssertNotNil(model.editorRevealRequest)
+        }
+        func assertCleared() {
+            XCTAssertNil(model.lastRunDiagnostic)
+            XCTAssertNil(model.lastRunCode)
+            XCTAssertNil(model.editorRevealRequest)
+        }
+        seed()
+        model.resetDraft()
+        assertCleared()
+        seed()
+        model.selectMode(.practice)
+        assertCleared()
+        seed()
+        model.selectExercise(model.exercises[1].id)
+        assertCleared()
+        seed()
+        model.selectChapter("basics")
+        assertCleared()
+        seed()
+        model.flushSave()
+        let restored = AppModel(store: model.store)
+        XCTAssertEqual(restored.code, model.code)
+        XCTAssertNil(restored.lastRunDiagnostic)
+        XCTAssertNil(restored.lastRunCode)
+        XCTAssertNil(restored.editorRevealRequest)
+        restored.flushSave()
+    }
+
+    @MainActor
+    func testRunDiagnosticClearsOnInterpreterSetupFailure() async throws {
+        model.lastRunCode = model.code
+        model.lastRunDiagnostic = RunDiagnostic(exceptionType: "SyntaxError", message: "synthetic", origin: .learner,
+                                                 frames: [.init(line: 1, function: "<module>")])
+        model.revealDiagnosticLine()
+        model.progress.pythonPath = "/nonexistent/python-teacher-test-python"
+        model.runCode()
+        try await waitForRun()
+        XCTAssertNil(model.lastRunDiagnostic)
+        XCTAssertNil(model.lastRunCode)
+        XCTAssertNil(model.editorRevealRequest)
+        XCTAssertNil(model.diagnosticGuidance)
+        XCTAssertNil(model.diagnosticLine)
+        XCTAssertFalse(model.output.isEmpty)
+        XCTAssertTrue(model.feedback.contains("Execution could not complete"))
+    }
+
+    @MainActor
+    func testDiagnosticGuidanceIsLocalFreshAndNeverShownInAssessments() {
+        let types = ["SyntaxError", "IndentationError", "TabError", "NameError", "UnboundLocalError", "TypeError",
+                     "ValueError", "IndexError", "KeyError", "AttributeError", "ZeroDivisionError", "AssertionError", "RuntimeError"]
+        for mode in LearningMode.allCases {
+            model.selectMode(mode)
+            model.code = "print('synthetic')\n"
+            model.lastRunCode = model.code
+            for type in types {
+                let diagnostic = RunDiagnostic(exceptionType: type, message: "synthetic exception message", origin: .learner,
+                                               frames: [.init(line: 1, function: "<module>")])
+                model.lastRunDiagnostic = diagnostic
+                XCTAssertEqual(model.diagnosticGuidance == nil, mode == .assessment, type)
+                XCTAssertEqual(model.diagnosticLine, 1)
+                let card = RunFailureCard(diagnostic: diagnostic, assessment: mode == .assessment, stale: false,
+                                          guidance: "must not appear in assessment", navigableLine: 1, reveal: {})
+                XCTAssertEqual(card.displayedGuidance == nil, mode == .assessment)
+                XCTAssertEqual(card.displayedMessage == nil, mode == .assessment)
+            }
+        }
+        model.selectMode(.practice)
+        model.code = "print('synthetic')\n"
+        model.lastRunCode = model.code
+        for origin in [RunDiagnostic.Origin.checks, .runner] {
+            model.lastRunDiagnostic = RunDiagnostic(exceptionType: "AssertionError", message: "synthetic", origin: origin,
+                                                     frames: [.init(line: 1, function: "<module>")])
+            XCTAssertNil(model.diagnosticGuidance)
+            XCTAssertNil(model.diagnosticLine)
+            model.revealDiagnosticLine()
+            XCTAssertNil(model.editorRevealRequest)
+        }
+        for line in [0, -1, 3, Int.max] {
+            model.lastRunDiagnostic = RunDiagnostic(exceptionType: "NameError", message: "synthetic", origin: .learner,
+                                                     frames: [.init(line: line, function: "<module>")])
+            XCTAssertNil(model.diagnosticLine)
+        }
+        XCTAssertTrue(model.messages.isEmpty)
+        XCTAssertEqual(model.hintCount, 0)
+        XCTAssertEqual(model.requestCount, 0)
+    }
+
+    @MainActor
     func testEditsAfterPassingDoNotReuseStaleResults() async throws {
         model.selectMode(.practice)
         model.code = model.exercise.referenceSolution
@@ -1932,6 +2070,128 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(editor.selectedRange(), NSRange(location: 10, length: 0))
     }
 
+    func testEditorRevealLineRangesUseUTF16AndHandleBlankFinalAndInvalidLines() {
+        let source = "name = '𐐀e\u{301}'\r\n\r\nprint(name)\n"
+        let firstLength = "name = '𐐀e\u{301}'".utf16.count
+        XCTAssertEqual(EditorRevealRequest.lineRange(1, in: source), NSRange(location: 0, length: firstLength))
+        XCTAssertEqual(EditorRevealRequest.lineRange(2, in: source), NSRange(location: firstLength + 2, length: 0))
+        XCTAssertEqual(EditorRevealRequest.lineRange(3, in: source), NSRange(location: firstLength + 4, length: 11))
+        XCTAssertEqual(EditorRevealRequest.lineRange(4, in: source), NSRange(location: source.utf16.count, length: 0))
+        XCTAssertEqual(EditorRevealRequest.lineRange(1, in: ""), NSRange(location: 0, length: 0))
+        XCTAssertNil(EditorRevealRequest.lineRange(2, in: ""))
+        XCTAssertEqual(EditorRevealRequest.lineRange(2, in: "a\rb"), NSRange(location: 2, length: 1))
+        XCTAssertEqual(EditorRevealRequest.lineRange(1, in: "a\u{2028}b"), NSRange(location: 0, length: 3))
+        for line in [-1, 0, 5, Int.max] { XCTAssertNil(EditorRevealRequest.lineRange(line, in: source)) }
+    }
+
+    @MainActor
+    func testHostedEditorExplicitRevealRepeatsScrollsAndPreservesTextAndUndo() async throws {
+        _ = NSApplication.shared
+        let original = "name = '𐐀café'\n\n" + String(repeating: "print(name)\n", count: 100)
+        model.code = original
+        let binding = Binding(get: { self.model.code }, set: { self.model.code = $0 })
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 400), styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let hosting = NSHostingView(rootView: CodeEditor(text: binding, sourceIdentity: "draft"))
+        window.contentView = hosting
+        window.orderFront(nil)
+        defer { window.close() }
+        try await Task.sleep(for: .milliseconds(100))
+        func descendants(of view: NSView) -> [NSView] { view.subviews.flatMap { [$0] + descendants(of: $0) } }
+        let editor = try XCTUnwrap(descendants(of: hosting).compactMap { $0 as? PythonTextView }.first)
+        XCTAssertTrue(window.makeFirstResponder(editor))
+        let undo = try XCTUnwrap(editor.undoManager)
+        undo.beginUndoGrouping()
+        editor.insertText("print('final')", replacementRange: NSRange(location: original.utf16.count, length: 0))
+        undo.endUndoGrouping()
+        let source = model.code
+        XCTAssertTrue(undo.canUndo)
+        XCTAssertTrue(window.makeFirstResponder(window))
+        let responder = window.firstResponder
+        hosting.rootView = CodeEditor(text: binding, sourceIdentity: "draft")
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertTrue(window.firstResponder === responder, "Ordinary updates must not focus the editor")
+        let storage = try XCTUnwrap(editor.textStorage)
+        let originalStorage = NSAttributedString(attributedString: storage)
+        let lastRange = try XCTUnwrap(EditorRevealRequest.lineRange(103, in: source))
+        var previousID: UUID?
+        for _ in 0..<2 {
+            editor.setSelectedRange(NSRange(location: 0, length: 0))
+            editor.scrollRangeToVisible(editor.selectedRange())
+            let request = EditorRevealRequest(sourceIdentity: "draft", source: source, line: 103)
+            XCTAssertNotEqual(request.id, previousID)
+            previousID = request.id
+            hosting.rootView = CodeEditor(text: binding, sourceIdentity: "draft", revealRequest: request)
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertEqual(editor.selectedRange(), lastRange)
+            XCTAssertTrue(window.firstResponder === editor)
+            let layout = try XCTUnwrap(editor.layoutManager)
+            let container = try XCTUnwrap(editor.textContainer)
+            let rect = layout.boundingRect(forGlyphRange: layout.glyphRange(forCharacterRange: lastRange, actualCharacterRange: nil), in: container)
+                .offsetBy(dx: editor.textContainerOrigin.x, dy: editor.textContainerOrigin.y)
+            XCTAssertTrue(editor.visibleRect.intersects(rect))
+            editor.setSelectedRange(NSRange(location: 0, length: 0))
+            hosting.rootView = CodeEditor(text: binding, sourceIdentity: "draft", revealRequest: request)
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertEqual(editor.selectedRange(), NSRange(location: 0, length: 0), "A consumed request must not replay on updates")
+        }
+        for line in [1, 2, 103] {
+            hosting.rootView = CodeEditor(text: binding, sourceIdentity: "draft",
+                                          revealRequest: EditorRevealRequest(sourceIdentity: "draft", source: source, line: line))
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertEqual(editor.selectedRange(), EditorRevealRequest.lineRange(line, in: source))
+        }
+        for request in [EditorRevealRequest(sourceIdentity: "draft", source: source, line: 0),
+                        EditorRevealRequest(sourceIdentity: "draft", source: source, line: Int.max),
+                        EditorRevealRequest(sourceIdentity: "old-draft", source: source, line: 1),
+                        EditorRevealRequest(sourceIdentity: "draft", source: original, line: 1)] {
+            let selection = editor.selectedRange()
+            hosting.rootView = CodeEditor(text: binding, sourceIdentity: "draft", revealRequest: request)
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertEqual(editor.selectedRange(), selection)
+        }
+        XCTAssertTrue(storage.isEqual(to: originalStorage))
+        XCTAssertEqual(editor.string, source)
+        XCTAssertEqual(model.code, source)
+        XCTAssertFalse(undo.canRedo)
+        undo.undo()
+        XCTAssertEqual(editor.string, original, "Reveal must neither add undo entries nor erase existing undo")
+        XCTAssertEqual(model.code, original)
+        hosting.rootView = CodeEditor(text: binding, sourceIdentity: "draft",
+                                      revealRequest: EditorRevealRequest(sourceIdentity: "draft", source: original, line: 103))
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(editor.selectedRange(), NSRange(location: original.utf16.count, length: 0))
+        XCTAssertTrue(undo.canRedo)
+        undo.redo()
+        XCTAssertEqual(editor.string, source)
+    }
+
+    @MainActor
+    func testEditorRevealPreservesMarkedTextAndNeverDefersItsJump() throws {
+        _ = NSApplication.shared
+        var code = "label = \nprint(label)\n"
+        let binding = Binding(get: { code }, set: { code = $0 })
+        let request = EditorRevealRequest(sourceIdentity: "draft", source: code, line: 2)
+        let coordinator = CodeEditor(text: binding, sourceIdentity: "draft", revealRequest: request).makeCoordinator()
+        let editor = PythonTextView(frame: NSRect(x: 0, y: 0, width: 400, height: 300))
+        editor.string = code
+        editor.setSelectedRange(NSRange(location: 8, length: 0))
+        editor.setMarkedText("é", selectedRange: NSRange(location: 1, length: 0), replacementRange: NSRange(location: NSNotFound, length: 0))
+        let storage = try XCTUnwrap(editor.textStorage)
+        let before = NSAttributedString(attributedString: storage)
+        let selection = editor.selectedRange()
+        let marked = editor.markedRange()
+        coordinator.reveal(in: editor)
+        XCTAssertTrue(storage.isEqual(to: before))
+        XCTAssertEqual(editor.markedRange(), marked)
+        XCTAssertEqual(editor.selectedRange(), selection)
+        editor.insertText("", replacementRange: editor.markedRange())
+        editor.setSelectedRange(NSRange(location: 0, length: 0))
+        XCTAssertEqual(editor.string, code)
+        coordinator.reveal(in: editor)
+        XCTAssertEqual(editor.selectedRange(), NSRange(location: 0, length: 0))
+    }
+
     @MainActor
     func testHostedEditorFindCommandsNavigateWithoutChangingDraft() async throws {
         _ = NSApplication.shared
@@ -2042,6 +2302,58 @@ final class AppModelTests: XCTestCase {
         image.lockFocus()
         ruler.drawHashMarksAndLabels(in: NSRect(x: 0, y: 0, width: 48, height: 300))
         image.unlockFocus()
+    }
+
+    @MainActor
+    func testNativeFailureCardsRenderAtDefaultAndMinimumSizesWithoutShrinkingEditor() async throws {
+        _ = NSApplication.shared
+        for size in [NSSize(width: 1380, height: 900), NSSize(width: 1080, height: 740)] {
+            let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            let hosting = NSHostingView(rootView: WorkspaceView().environmentObject(model))
+            window.contentView = hosting
+            window.orderFront(nil)
+            defer { window.close() }
+            func descendants(of view: NSView) -> [NSView] { view.subviews.flatMap { [$0] + descendants(of: $0) } }
+            for mode in LearningMode.allCases {
+                model.selectMode(mode)
+                model.code = "def read_count():\n    return int('not a number')\n\nread_count()\n"
+                try await Task.sleep(for: .milliseconds(200))
+                hosting.layoutSubtreeIfNeeded()
+                let editor = try XCTUnwrap(descendants(of: hosting).compactMap { $0 as? PythonTextView }.first)
+                let scroll = try XCTUnwrap(editor.enclosingScrollView)
+                let baselineHeight = scroll.frame.height
+                let baselineWidth = scroll.frame.width
+                model.lastRunCode = model.code
+                model.lastRunDiagnostic = RunDiagnostic(exceptionType: "ValueError", message: "invalid literal for int() with base 10: 'not a number'",
+                                                         origin: .learner, frames: [.init(line: 4, function: "<module>"), .init(line: 2, function: "read_count")])
+                model.output = "Traceback (most recent call last):\n  File \"main.py\", line 4, in <module>\n    read_count()\n  File \"main.py\", line 2, in read_count\n    return int('not a number')\nValueError: invalid literal for int() with base 10: 'not a number'"
+                let originalOutput = model.output
+                let selection = editor.selectedRange()
+                try await Task.sleep(for: .milliseconds(200))
+                hosting.layoutSubtreeIfNeeded()
+                XCTAssertEqual(scroll.frame.height, baselineHeight, accuracy: 1, "The supplementary card must not take height from the editor")
+                XCTAssertEqual(scroll.frame.width, baselineWidth, accuracy: 1)
+                XCTAssertEqual(editor.selectedRange(), selection, "Receiving diagnostics must not navigate automatically")
+                XCTAssertEqual(model.output, originalOutput)
+                let bitmap = try XCTUnwrap(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds))
+                hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
+                XCTAssertGreaterThanOrEqual(bitmap.pixelsWide, Int(size.width))
+                XCTAssertGreaterThanOrEqual(bitmap.pixelsHigh, Int(size.height))
+                let name = "failure-\(mode.rawValue.lowercased())-\(Int(size.width))"
+                try saveSnapshot(of: hosting, name: name)
+                if mode == .practice {
+                    model.code += "\n"
+                    try await Task.sleep(for: .milliseconds(150))
+                    hosting.layoutSubtreeIfNeeded()
+                    XCTAssertNil(model.diagnosticLine)
+                    XCTAssertNil(model.diagnosticGuidance)
+                    XCTAssertEqual(model.output, originalOutput)
+                    XCTAssertEqual(scroll.frame.height, baselineHeight, accuracy: 1)
+                    try saveSnapshot(of: hosting, name: name + "-stale")
+                }
+            }
+        }
     }
 
     @MainActor
