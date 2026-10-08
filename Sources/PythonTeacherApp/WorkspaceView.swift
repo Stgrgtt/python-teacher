@@ -389,8 +389,8 @@ struct WorkspaceView: View {
             VSplitView {
                 CodeEditor(text: $model.code, editable: !model.isBusy && model.isUnlocked, fontSize: codeSize.clamped(to: AppearanceKey.codeRange),
                            sourceIdentity: model.draftKey, revealRequest: model.editorRevealRequest)
-                    .id(model.draftKey).frame(minHeight: 330, maxHeight: .infinity)
-                outputPanel.frame(minHeight: 80, idealHeight: 155, maxHeight: .infinity)
+                    .id(model.draftKey).frame(minHeight: 330, maxHeight: .infinity).layoutPriority(1)
+                outputPanel.frame(minHeight: 150, idealHeight: 155, maxHeight: .infinity)
             }
             if model.mode == .practice {
                 HStack(alignment: .top, spacing: 10) {
