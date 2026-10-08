@@ -376,6 +376,29 @@ extension Curriculum {
         - ties
 
         Keep representation errors separate from arithmetic errors. The next chapter adds explicit validation for untrusted shapes and values.
+
+        ### Inspect without changing the evidence
+
+        Keep the failing record small. Compare its keys with the contract: which fields are required, and which are optional? An empty accumulator is different from a record missing required data. Choose a default only when the contract gives that absence a meaning.
+
+        A labeled print can show one record and the result of a lookup. `repr(value)` produces a text representation: quotes make an empty string or edge spaces visible, unlike printing the string directly. It is an observation tool, not a way to parse JSON.
+
+        ```python
+        record = {"name": " Mira ", "points": 4}
+        print("record:", record)
+        print("name:", repr(record["name"]))
+        print("optional bonus:", record.get("bonus", 0))
+        print("after lookup:", record)
+        ```
+
+        ```text
+        record: {'name': ' Mira ', 'points': 4}
+        name: ' Mira '
+        optional bonus: 0
+        after lookup: {'name': ' Mira ', 'points': 4}
+        ```
+
+        The lookup did not insert a key. After a repair, check both the returned value and the original records, then call the function again with different data. A correct-looking result must not hide unexpected input changes.
         """,
         exercises: [
             exercise("collections-count", "Count synthetic task labels", """
@@ -466,7 +489,38 @@ extension Curriculum {
                      "def rank_models(records):\n    return []\n",
                      "def rank_models(records):\n    ordered = sorted(records, key=lambda record: (-record['score'], record['model']))\n    names = []\n    for record in ordered:\n        names.append(record['model'])\n    return names\n",
                      "assert rank_models([]) == []\nrecords = [{'model': 'zeta', 'score': 0.8}, {'model': 'beta', 'score': 0.9}, {'model': 'alpha', 'score': 0.8}]\nassert rank_models(records) == ['beta', 'alpha', 'zeta']\nassert records == [{'model': 'zeta', 'score': 0.8}, {'model': 'beta', 'score': 0.9}, {'model': 'alpha', 'score': 0.8}]\nassert rank_models([{'model': 'only', 'score': -1, 'tag': 'demo'}]) == ['only']\n",
-                     ["The score is the primary ordering rule; the name is consulted only when scores tie. A tuple key compares its parts in that order.", "`sorted` returns a fresh list and can call a helper function for each record via its `key` argument. A lambda is merely a shorter way to write that helper.", "Ascending sorting of negated scores puts larger original scores first. Keep the name part in normal ascending order, then build a separate list of names from the ordered records."])
+                     ["The score is the primary ordering rule; the name is consulted only when scores tie. A tuple key compares its parts in that order.", "`sorted` returns a fresh list and can call a helper function for each record via its `key` argument. A lambda is merely a shorter way to write that helper.", "Ascending sorting of negated scores puts larger original scores first. Keep the name part in normal ascending order, then build a separate list of names from the ordered records."]),
+            exercise("collections-debug-optional-field", "Diagnose an optional record field", """
+                     Goal:
+                     Repair a function that calculates one integer point total per record. Each record has required integer `points` and may have integer `bonus`; an absent bonus means zero.
+
+                     Starting code:
+                     - Keep `def point_totals(records):` and repair its attempted implementation.
+                     - `point_totals([{'points': 3, 'bonus': 2}])` returns `[5]`, but `point_totals([{'points': 3}])` stops with `KeyError` instead of returning `[3]`.
+                     - The input is already a Python list of dictionaries, not JSON text. All supplied points and bonuses are nonnegative integers. Required `points` is always present.
+
+                     Your task:
+                     1. Reproduce the one-record failure and inspect that record's shape without changing it.
+                     2. Compare the contract's required and optional fields and form a hypothesis about the failing operation.
+                     3. Repair the function so each result is the record's points plus its bonus, using zero only when the optional bonus is absent.
+                     4. Return a new Python list of integer totals in input order. Keep repeated totals and include zero totals.
+                     5. Leave the original list and every dictionary unchanged, including any extra fields. Ignore extra fields in the calculation.
+                     6. Return `[]` for empty input and compute fresh results on repeated calls. No invalid-input validation is required.
+
+                     Expected result:
+                     - `point_totals([{'points': 3}])` returns `[3]`, a list containing an integer.
+                     - `point_totals([{'points': 3, 'bonus': 2}, {'points': 0}, {'points': 5, 'bonus': 0}])` returns `[5, 0, 5]`.
+                     - `point_totals([])` returns `[]`.
+                     - No missing key is added to the input records as a side effect.
+
+                     Check:
+                     Choose **Check solution**. The starter's intentional failure is `KeyError`. Checks require returned lists of integers for absent, present, and zero bonuses, preserve records and extra fields, and test empty input and repeated calls.
+                     """,
+                     "def point_totals(records):\n    totals = []\n    for record in records:\n        totals.append(record['points'] + record['bonus'])\n    return totals\n",
+                     "def point_totals(records):\n    totals = []\n    for record in records:\n        totals.append(record['points'] + record.get('bonus', 0))\n    return totals\n",
+                     "assert point_totals([{'points': 3}]) == [3]\nassert point_totals([]) == []\nrecords = [{'points': 3, 'bonus': 2}, {'points': 0, 'tag': 'keep'}, {'points': 5, 'bonus': 0}, {'points': 3, 'bonus': 2}]\ntotals = point_totals(records)\nassert type(totals) is list\nassert totals == [5, 0, 5, 5]\nfor total in totals:\n    assert type(total) is int\nassert records == [{'points': 3, 'bonus': 2}, {'points': 0, 'tag': 'keep'}, {'points': 5, 'bonus': 0}, {'points': 3, 'bonus': 2}]\ntotals.append(99)\nassert point_totals([{'points': 1, 'bonus': 4}]) == [5]\nassert point_totals(records) == [5, 0, 5, 5]\nassert point_totals([{'points': 0, 'bonus': 0}]) == [0]\nassert records == [{'points': 3, 'bonus': 2}, {'points': 0, 'tag': 'keep'}, {'points': 5, 'bonus': 0}, {'points': 3, 'bonus': 2}]\n",
+                     ["The failing input is a list containing one dictionary. Trace the lookup within that dictionary rather than changing the outer structure or parsing it as JSON.", "Compare the record that succeeds with the one that fails. Which field may be absent according to the contract, and what value should its absence contribute?", "Keep bracket lookup for required points. Read the optional bonus with get and a default of 0, then append the sum to a fresh result list; do not insert a default into the caller's dictionary."],
+                     effort: .init(scopeUnits: 2), expectedStarterError: "KeyError")
         ],
         assessment: exercise("collections-assessment", "Aggregate token usage by model", """
                              Goal:

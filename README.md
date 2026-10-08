@@ -81,7 +81,7 @@ Friends also need Python 3 installed (see Quick start, step 1). The other option
 - **Beginner-first lessons:** explanations of unfamiliar syntax, small standalone examples, numbered exercise steps, and exact expected results.
 - **Three learning modes:** Learn, Practice, and Assessment, with the editor and output visible in each mode.
 - **Native editing:** Python syntax highlighting, line numbers, indentation, undo/redo, and incremental find, backed by an AppKit text editor. Click in the code editor and use **⌘F** to search, **⌘G / ⇧⌘G** for the next/previous match, **⌘E** to use selected text as the search term, and **Escape** to close the find bar. These commands are also available under **Edit → Find**.
-- **Local feedback:** run code, check exercise behavior, inspect errors, and cancel execution without leaving the workspace.
+- **Local feedback and debugging aids:** run code, check behavior, inspect a structured failure card and original traceback, jump to a fresh learner-code error line, and cancel execution without leaving the workspace. Learn/Practice include offline error-category guidance; assessment cards provide neutral type/location information only.
 - **Graduated assistance:** built-in practice hints and an explicit reference-solution reveal, with assistance recorded separately from independent work.
 - **Optional AI teaching:** contextual explanations and generated practice, including objective-driven projects that focus on the current chapter and use its prerequisite chapters as a toolkit.
 - **Resumable work:** separate exercise drafts, saved attempts, reflections, and per-exercise teacher conversations.
@@ -115,6 +115,14 @@ In the **Practice** exercise picker, **✓** marks exercises with a recorded pas
 
 The **Chapters** popover provides chapter navigation, mastery status, and review links. Resize the left instruction panel as needed. Learn and Practice share the selected practice draft and conversation; Assessment uses its own draft and does not show or send that conversation.
 
+### Reading a failure
+
+A failure card distinguishes **Your code**, **Checks**, and **Python runner**. For learner errors, it shows the error category, a bounded message and the learner's call frames. **Go to line** selects the relevant line without editing your code or changing undo history. Navigation is disabled after editing until you run the current code again; changing exercises or restoring the starter clears the diagnostic.
+
+Learn/Practice add a short offline explanation of common error categories. Assessment cards omit this coaching and the diagnostic message, while the original output remains available as before. Check/harness locations never navigate into your editor. Diagnostics are supplementary: they do not award completion or replace executable checks. If a run times out, is cancelled, or cannot supply a structured diagnostic, use its original output/status.
+
+These are error-reading tools, not a live debugger: breakpoints, variable inspection and execution replay are future phases. Named expected/actual check results and scratch-input experiments are also still planned.
+
 ### Keyboard shortcuts
 
 | Shortcut | Action |
@@ -130,7 +138,9 @@ The **Learning** menu also offers exports for the current Python file and a lear
 
 ## Curriculum and progression
 
-The built-in course contains **17 chapters, 51 reviewed practice exercises, 17 coding assessments and 51 theory questions**. Seven foundation chapters form a shared starting path; later chapters branch into Core Python II, Software craft and Data science. Every lesson code block runs independently in the restricted runner.
+The built-in course contains **17 chapters, 63 reviewed practice exercises, 17 coding assessments and 51 theory questions**. Seven foundation chapters form a shared starting path; later chapters branch into Core Python II, Software craft and Data science. Every runnable lesson code block runs independently in the restricted runner; intentionally broken illustrations are displayed as text.
+
+The foundations include **12 offline debugging/prediction labs**, appended after the original exercises. Basics teaches **Understanding errors**, and Functions teaches **Debugging systematically**, within their existing lesson sections. Labs cover syntax repair, overwritten values, expression predictions, decision priorities and boundaries, loop traces, return values, minimal counterexamples, optional dictionary fields, and validation of later records. Existing activities, assessments, prerequisites, saved drafts, and mastery history are unchanged. Early fixed-input labs check the supplied example, not every possible input; recording a correct prediction alone does not establish a general algorithm.
 
 | Chapter | Focus |
 | --- | --- |
@@ -188,7 +198,7 @@ Player XP recognizes study effort separately from mastery. The player-progress p
 
 Difficulty is relative to the current chapter. Reviewed exercises have authored ratings for the required stages. For generated exercises, requested lesson coverage (or the selected task's workload) sets a minimum. Restricted local Python analyzes the starter/reference syntax trees without executing their contents: changed result bindings count as work units, and each function contributes one unit per two changed assignment/return/raise statements, rounded up. Supplied unchanged statements and formatting do not add work. The larger of this estimate and the coverage minimum determines workload, while the chosen difficulty is preserved. A variation requiring two result calculations can therefore earn more than its one-result source. **Generated workload is capped at the chapter's reviewed assessment workload; projects may earn one more unit.** A project requests one unit per focus section plus one for integration. This keeps a single AI exercise comparable to a hard reviewed exercise, rather than letting broad coverage or a long provider-written reference outweigh whole chapters. Learner code length, time spent, and AI-awarded points never determine XP. The generation dialog shows the reward range; the finished exercise shows its exact reward and whether its rating is estimated.
 
-Pacing: finishing every reviewed practice, assessment and lesson earns about 33,800 XP (around level 35). Early levels arrive within the first chapter; each further level costs 100 + 50 × level XP, so after the curriculum a level takes roughly six to nine capped AI exercises.
+Pacing: the 12 added debugging/prediction labs provide 1,600 available first-completion XP in addition to the earlier reviewed course. Existing awards and historical progress are unchanged. Early levels arrive within the first chapter; each further level costs 100 + 50 × level XP.
 
 For example, saving a learner name earns 50 XP, cleaning and reporting a label earns 300 XP, and repairing the latency summary earns 450 XP. Revealing the reference halves those rewards.
 
@@ -375,9 +385,11 @@ When changing curriculum content, keep existing chapter/exercise IDs and saved d
 
 ## Scope and limitations
 
-This is a personal foundation-learning app, not a full IDE or a complete programming curriculum. It currently has no terminal, debugger, language server, third-party Python package workflow, multi-file project explorer, cloud sync, or support for other learning languages. Interactive terminal input is not part of the exercise workflow.
+This is a personal foundation-learning app, not a full IDE or a complete programming curriculum. It currently has no terminal, live debugger or execution replay, language server, third-party Python package workflow, multi-file project explorer, cloud sync, or support for other learning languages. Interactive terminal input is not part of the exercise workflow.
 
-Future directions include HTTP APIs, dependency management, Git, multi-file projects, LLM evaluation, an independent capstone, richer assessment banks, improved spaced review, and distribution signing/notarization. These are planned directions, not shipped features.
+The learning-repertoire overhaul is tracked in [PLAN.md](PLAN.md) with a validation gate between delivery slices: debugging foundations; readable checks and scratch experiments; varied offline practice, projects and assessment banks; execution replay; and broader software-craft/data skills. Debugging foundations (Phase 1A) are implemented and automatically validated on `feature/debugging-foundations`, based on the readable-learning-panel branch, for later integration into `develop`; hands-on packaged-app acceptance remains pending. Unchecked roadmap items are planned, not shipped. Managed NumPy/pandas/matplotlib support still needs separate approval of the package-environment security change.
+
+Further directions include HTTP APIs, dependency management, Git, multi-file projects, LLM evaluation, and distribution signing/notarization. These are not included implicitly in the debugging work.
 
 See [PLAN.md](PLAN.md) for dated implementation and verification records. Live teaching/generation quality and live API compatibility for every provider, personal Keychain credential setup, and hands-on keyboard-layout behavior remain explicitly unverified by the automated suite.
 

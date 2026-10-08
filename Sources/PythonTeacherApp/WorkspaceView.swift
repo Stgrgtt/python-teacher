@@ -376,7 +376,8 @@ struct WorkspaceView: View {
             }.buttonStyle(.borderless).padding(.horizontal, 14).padding(.vertical, 12)
             Divider()
             VSplitView {
-                CodeEditor(text: $model.code, editable: !model.isBusy && model.isUnlocked, fontSize: codeSize.clamped(to: AppearanceKey.codeRange))
+                CodeEditor(text: $model.code, editable: !model.isBusy && model.isUnlocked, fontSize: codeSize.clamped(to: AppearanceKey.codeRange),
+                           sourceIdentity: model.draftKey, revealRequest: model.editorRevealRequest)
                     .id(model.draftKey).frame(minHeight: 330, maxHeight: .infinity)
                 outputPanel.frame(minHeight: 80, idealHeight: 155, maxHeight: .infinity)
             }
@@ -487,6 +488,11 @@ struct WorkspaceView: View {
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
+                    if let diagnostic = model.lastRunDiagnostic {
+                        RunFailureCard(diagnostic: diagnostic, assessment: model.mode == .assessment,
+                                       stale: model.isOutputStale, guidance: model.diagnosticGuidance,
+                                       navigableLine: model.diagnosticLine, reveal: model.revealDiagnosticLine)
+                    }
                     ScrollView(.horizontal) {
                         Text(model.output).font(.system(size: codeSize.clamped(to: AppearanceKey.codeRange) - 2, design: .monospaced)).textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -549,6 +555,63 @@ struct WorkspaceView: View {
             Divider().frame(height: 10)
             Text("AI: \(model.requestCount)/\(model.progress.sessionRequestLimit) requests this launch")
         }.appFont(.caption2).foregroundStyle(.secondary).padding(.horizontal, 16).padding(.vertical, 7)
+    }
+}
+
+struct RunFailureCard: View {
+    let diagnostic: RunDiagnostic
+    let assessment: Bool
+    let stale: Bool
+    let guidance: String?
+    let navigableLine: Int?
+    let reveal: () -> Void
+
+    var originLabel: String {
+        switch diagnostic.origin {
+        case .learner: return "Your code"
+        case .checks: return "Checks"
+        case .runner: return "Python runner"
+        }
+    }
+
+    var displayedMessage: String? { assessment || diagnostic.message.isEmpty ? nil : diagnostic.message }
+    var displayedGuidance: String? { assessment || stale ? nil : guidance }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline) {
+                Label(diagnostic.exceptionType, systemImage: "exclamationmark.circle")
+                    .appFont(.callout, weight: .semibold)
+                Text(originLabel).appFont(.caption).foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+            }
+            if stale {
+                Text("Previous code version — run again for a current location.")
+                    .appFont(.caption).foregroundStyle(.secondary)
+            }
+            if let displayedMessage {
+                Text(displayedMessage).appFont(.callout).textSelection(.enabled)
+            }
+            if !diagnostic.frames.isEmpty {
+                Text(diagnostic.frames.map { "\($0.function) · line \($0.line)" }.joined(separator: " → "))
+                    .appFont(.caption, design: .monospaced).textSelection(.enabled)
+                    .accessibilityLabel("Your code frames, outermost first: " + diagnostic.frames.map { "\($0.function), line \($0.line)" }.joined(separator: "; "))
+            }
+            if let displayedGuidance {
+                Text(displayedGuidance).appFont(.callout).foregroundStyle(.secondary)
+            }
+            if let line = diagnostic.learnerLine, diagnostic.origin == .learner {
+                Button("Go to line \(line)", action: reveal)
+                    .appFont(.caption).buttonStyle(.borderless)
+                    .disabled(stale || navigableLine != line)
+                    .accessibilityLabel("Go to line \(line) in your Python code")
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Run failure")
     }
 }
 

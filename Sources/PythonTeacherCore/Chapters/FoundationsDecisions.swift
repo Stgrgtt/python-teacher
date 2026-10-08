@@ -89,6 +89,29 @@ extension Curriculum {
 
         The checker expects the original input values.
 
+        ### Find one counterexample
+
+        A **counterexample** is an input where an attempted rule disagrees with the intended rule. It can be more informative than several ordinary cases that happen to work.
+
+        Suppose a group may start with at least three people. Inspect the comparison at the exact boundary:
+
+        ```python
+        people = 3
+        attempted = people > 3
+        required = people >= 3
+        print(attempted)
+        print(required)
+        ```
+
+        ```text
+        False
+        True
+        ```
+
+        Both comparisons run successfully. Three people distinguish the rules; four would not. For a priority rule, choose inputs where both conditions hold, then trace every assignment to the result. A later independent `if` can replace an earlier decision.
+
+        A fixed-input check confirms that example only. After repairing a rule, temporarily try a nearby value and a conflicting case, then restore the supplied inputs before checking.
+
         ## Combine conditions with and, or, and not
 
         Real rules often have more than one requirement. Three words combine Booleans:
@@ -285,7 +308,59 @@ extension Curriculum {
                      "score = 1.1\nin_range = True\nlabel = 'pass'\n",
                      "score = 1.1\nin_range = 0 <= score <= 1\nif not in_range:\n    label = 'invalid'\nelif score >= 0.6:\n    label = 'pass'\nelse:\n    label = 'retry'\n",
                      "assert score == 1.1\nassert in_range is False\nassert label == 'invalid'\n",
-                     ["A score above 1 also exceeds the passing threshold, but it is invalid. Validate the scale before judging whether a score passes.", "A comparison is already a Boolean value, so `in_range` can be assigned the result of a range check directly. A chained comparison with `<=` on both sides includes both endpoints.", "Start the chain with `not in_range` so invalid scores are handled first. Then compare with `0.6` using `>=` so exactly `0.6` passes, and let `else` cover the remaining valid scores."])
+                     ["A score above 1 also exceeds the passing threshold, but it is invalid. Validate the scale before judging whether a score passes.", "A comparison is already a Boolean value, so `in_range` can be assigned the result of a range check directly. A chained comparison with `<=` on both sides includes both endpoints.", "Start the chain with `not in_range` so invalid scores are handled first. Then compare with `0.6` using `>=` so exactly `0.6` passes, and let `else` cover the remaining valid scores."]),
+            exercise("decisions-debug-priority", "Debug: a closed room opens", """
+                Goal:
+                Repair a room-status decision. The starter runs and saves `'open'`, although this room is under maintenance.
+
+                Starting code:
+                - `maintenance = True` and `guests = 6` are inputs. Keep them unchanged.
+                - The decision code attempts to save a string in `status`.
+
+                Your task:
+                1. Trace the value saved in `status` after each decision with the given inputs.
+                2. Repair the decision so maintenance always means `'closed'`, regardless of the guest count.
+                3. Without maintenance, at least two guests means `'open'`; otherwise the status must be `'waiting'`.
+                4. Express all outcomes in decision code, not a fixed status for this room.
+
+                Expected result:
+                - `status` is `'closed'` for the supplied inputs.
+                - Without maintenance, six guests would give `'open'` and one guest would give `'waiting'`.
+
+                Check:
+                Choose **Check solution**. It checks the unchanged inputs and status for the conflicting-condition example. Try the other cases yourself and restore the supplied inputs before checking.
+                """,
+                     "maintenance = True\nguests = 6\nif maintenance:\n    status = 'closed'\nif guests >= 2:\n    status = 'open'\nelse:\n    status = 'waiting'\n",
+                     "maintenance = True\nguests = 6\nif maintenance:\n    status = 'closed'\nelif guests >= 2:\n    status = 'open'\nelse:\n    status = 'waiting'\n",
+                     "assert maintenance is True and guests == 6\nassert status == 'closed'\n",
+                     ["Both conditions are true for these inputs. Follow the entire program rather than stopping at the first saved status.", "Independent `if` statements are each checked. An `if`/`elif` chain chooses only the first matching branch.", "Keep the maintenance branch first and make the guest comparison an `elif`, with the waiting `else` attached to that single chain."],
+                     effort: .init(difficulty: .similar, scopeUnits: 1)),
+            exercise("decisions-debug-entry-boundary", "Debug: entry at the boundary", """
+                Goal:
+                Repair an entry decision that saves `False` for an approved learner exactly at the minimum age, although the rule permits entry.
+
+                Starting code:
+                - `age = 12`, `minimum_age = 12`, and `approved = True` are fixed inputs.
+                - `can_enter` is an attempted Boolean decision, not a placeholder.
+
+                Your task:
+                1. Explain to yourself why the given inputs are a counterexample: compare the observed decision with the rule.
+                2. Repair `can_enter` so it is `True` only when the learner is at least `minimum_age` and has approval. Otherwise it must be `False`.
+                3. Use the input names to express both requirements, not a fixed Boolean answer.
+
+                Expected result:
+                - `can_enter` is `True` for the supplied inputs.
+                - At age `11` with approval, it would be `False`.
+                - At age `13` without approval, it would also be `False`.
+
+                Check:
+                Choose **Check solution**. It checks the fixed inputs and Boolean result at equality. Try the other two cases yourself, then restore the original inputs. One passing case does not establish the whole rule.
+                """,
+                     "age = 12\nminimum_age = 12\napproved = True\ncan_enter = age > minimum_age and approved\n",
+                     "age = 12\nminimum_age = 12\napproved = True\ncan_enter = age >= minimum_age and approved\n",
+                     "assert age == 12 and minimum_age == 12 and approved is True\nassert can_enter is True\n",
+                     ["At least includes the minimum itself. Check the age comparison separately from the approval requirement.", "Exactly equal inputs distinguish `>` from `>=`. Both requirements must still hold, so keep the approval check.", "Use `age >= minimum_age and approved` to include equality while still rejecting learners without approval."],
+                     effort: .init(difficulty: .easier, scopeUnits: 1))
         ],
         assessment: exercise("decisions-assessment-v2", "Choose a safe deployment action", """
             Goal:

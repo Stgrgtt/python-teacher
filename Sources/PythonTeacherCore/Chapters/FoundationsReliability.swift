@@ -170,6 +170,12 @@ extension Curriculum {
 
         When repairing a function, follow its indentation: a `return` inside a loop ends the call before later records can be checked.
 
+        ### Preserve the failing sequence
+
+        If one valid record works but a longer input fails its contract, keep a valid record followed by the smallest bad record. Checking the bad record alone may miss a problem that depends on its position.
+
+        State the expected failure as precisely as a successful result: which exception type, and whether its message must be nonempty. Receiving a partial total is not the same as rejecting the input. After a focused repair, rerun both the failing sequence and all-valid sequences, then make another valid call to check that the failure left no shared state behind.
+
         ## Build a small trustworthy tool
 
         Separate parsing, validation, and aggregation in your reasoning, even when the final function is short.
@@ -277,7 +283,38 @@ extension Curriculum {
                      "def summarize_latencies(values):\n    total = 0\n    for value in values:\n        total += value\n        return {'count': len(values), 'total_ms': total, 'mean_ms': total / len(values)}\n",
                      "def summarize_latencies(values):\n    if not isinstance(values, list):\n        raise ValueError('latencies must be a list')\n    total = 0\n    for value in values:\n        if type(value) is not int or value < 0:\n            raise ValueError('latencies must be nonnegative integers')\n        total += value\n    count = len(values)\n    return {'count': count, 'total_ms': total, 'mean_ms': total / count if count else 0.0}\n",
                      "assert summarize_latencies([]) == {'count': 0, 'total_ms': 0, 'mean_ms': 0.0}\nvalues = [10, 0, 20]\nassert summarize_latencies(values) == {'count': 3, 'total_ms': 30, 'mean_ms': 10.0}\nassert values == [10, 0, 20]\nassert summarize_latencies([7]) == {'count': 1, 'total_ms': 7, 'mean_ms': 7.0}\nfor invalid in [None, '12', (1, 2), [1, -1], [1, True], [1, 2.0], [1, '2']]:\n    raised = False\n    try:\n        summarize_latencies(invalid)\n    except ValueError as error:\n        raised = bool(str(error))\n    assert raised, 'invalid latencies must raise ValueError with a message'\n",
-                     ["`return` ends the function call immediately. In the starter it runs during the first loop visit, so later readings are neither summed nor checked.", "Check that the outer input is a list before looping, then require every item to be an exact nonnegative integer. A valid first item does not make later items valid.", "The final report belongs after all visits. For the mean, an empty list needs its explicit `0.0` result rather than division by its zero length; nonempty input uses the full total and count."])
+                     ["`return` ends the function call immediately. In the starter it runs during the first loop visit, so later readings are neither summed nor checked.", "Check that the outer input is a list before looping, then require every item to be an exact nonnegative integer. A valid first item does not make later items valid.", "The final report belongs after all visits. For the mean, an empty list needs its explicit `0.0` result rather than division by its zero length; nonempty input uses the full total and count."]),
+            exercise("reliability-debug-later-record", "Reject a bad record after good ones", """
+                     Goal:
+                     Repair `total_retries(records)` so it totals planned retries only when every record is valid. A retry is an additional attempt; this function only calculates a number and never performs an attempt.
+
+                     Starting code:
+                     - Keep the function name and parameter. The attempted implementation already includes validation and aggregation.
+                     - `total_retries([{'retries': -1}])` raises `ValueError`, but `total_retries([{'retries': 2}, {'retries': -1}])` unexpectedly returns `1` instead of rejecting the input.
+                     - Use that difference as evidence, without assuming all existing checks are effective.
+
+                     Your task:
+                     1. Reproduce the two-record failure and keep it as a regression case: the correct outcome is `ValueError`, not a partial or adjusted total.
+                     2. Accept a Python list whose every item is a dictionary with a required `retries` field. Ignore extra fields without changing them.
+                     3. Require each `retries` value to have exact type `int` and be from `0` through `5`, including both endpoints. Reject Booleans, floats, numeric strings, and other values rather than converting them.
+                     4. Raise `ValueError` with any nonempty message for invalid outer input, a non-dictionary item, a missing field, or any invalid retry value, wherever that record occurs.
+                     5. Form one hypothesis, make a focused repair, and return the integer sum only when all records pass validation. Empty input returns the integer `0`.
+                     6. Preserve the original list and dictionaries on both success and failure. Rerun valid, invalid, boundary, and repeated-call checks; do not catch an error merely to return a fallback number.
+
+                     Expected result:
+                     - `total_retries([{'retries': 2}, {'retries': 0}, {'retries': 5}])` returns the integer `7`.
+                     - `total_retries([])` returns the integer `0`.
+                     - `total_retries([{'retries': 2}, {'retries': -1}])` raises `ValueError` with a nonempty message.
+                     - The same error contract applies to `None`, `[{}]`, `[{'retries': True}]`, and a missing or invalid field after any number of valid records.
+
+                     Check:
+                     Choose **Check solution**. It checks exact integer totals and both endpoints, then invalid outer types and records in first and later positions. It also checks unchanged data and valid calls after failures. The starter reaches an assertion failure because it accepts a later invalid value.
+                     """,
+                     "def total_retries(records):\n    if not isinstance(records, list):\n        raise ValueError('records must be a list')\n    for record in records[:1]:\n        if not isinstance(record, dict) or 'retries' not in record:\n            raise ValueError('each record needs retries')\n        retries = record['retries']\n        if type(retries) is not int or not 0 <= retries <= 5:\n            raise ValueError('retries must be an integer from 0 to 5')\n    total = 0\n    for record in records:\n        total += record['retries']\n    return total\n",
+                     "def total_retries(records):\n    if not isinstance(records, list):\n        raise ValueError('records must be a list')\n    for record in records:\n        if not isinstance(record, dict) or 'retries' not in record:\n            raise ValueError('each record needs retries')\n        retries = record['retries']\n        if type(retries) is not int or not 0 <= retries <= 5:\n            raise ValueError('retries must be an integer from 0 to 5')\n    total = 0\n    for record in records:\n        total += record['retries']\n    return total\n",
+                     "assert total_retries([]) == 0\nassert type(total_retries([])) is int\nrecords = [{'retries': 2}, {'retries': 0, 'tag': 'keep'}, {'retries': 5}, {'retries': 2}]\nassert total_retries(records) == 9\nassert type(total_retries(records)) is int\nassert records == [{'retries': 2}, {'retries': 0, 'tag': 'keep'}, {'retries': 5}, {'retries': 2}]\ninvalid_records = [{'retries': 2}, {'retries': -1, 'tag': 'keep'}]\nraised = False\ntry:\n    total_retries(invalid_records)\nexcept ValueError as error:\n    raised = bool(str(error))\nassert raised, 'a later invalid record must raise ValueError with a message'\nassert invalid_records == [{'retries': 2}, {'retries': -1, 'tag': 'keep'}]\nfor invalid in [None, 'records', {}, ({'retries': 1},)]:\n    raised = False\n    try:\n        total_retries(invalid)\n    except ValueError as error:\n        raised = bool(str(error))\n    assert raised, 'invalid outer input must raise ValueError with a message'\nfor bad_record in [None, [], 1, {}, {'other': 2}, {'retries': -1}, {'retries': 6}, {'retries': True}, {'retries': False}, {'retries': 2.0}, {'retries': '2'}, {'retries': None}, {'retries': float('nan')}, {'retries': float('inf')}]:\n    for prefix in [[], [{'retries': 2}], [{'retries': 0}, {'retries': 5}]]:\n        raised = False\n        try:\n            total_retries(prefix + [bad_record])\n        except ValueError as error:\n            raised = bool(str(error))\n        assert raised, 'every invalid record must raise ValueError with a message'\nassert total_retries([{'retries': 5}]) == 5\nassert total_retries([{'retries': 0}]) == 0\nassert total_retries(records) == 9\nassert total_retries([]) == 0\nassert records == [{'retries': 2}, {'retries': 0, 'tag': 'keep'}, {'retries': 5}, {'retries': 2}]\n",
+                     ["Compare the same invalid record alone and after a valid one. What changes about the work performed before the function returns?", "Trace which records reach the validation checks and which reach the summing loop. Every record used in the total needs the same checks first.", "The validation loop currently visits only the slice records[:1]. Visit the complete records list instead, keeping the type, required-field, and range checks before any accepted total is returned. Then rerun the later-record failure and valid-input regressions."],
+                     effort: .init(scopeUnits: 2))
         ],
         assessment: exercise("reliability-assessment", "Analyze a synthetic evaluation file", """
                              Goal:
