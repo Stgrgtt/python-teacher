@@ -3,6 +3,16 @@ import XCTest
 @testable import PythonTeacherCore
 
 final class FoundationsCurriculumTests: XCTestCase {
+    private let phase1ALabIDs: [String: [String]] = [
+        "basics": ["basics-debug-quote", "basics-debug-saved-total"],
+        "values": ["values-debug-clean-label", "values-predict-token-total"],
+        "decisions": ["decisions-debug-priority", "decisions-debug-entry-boundary"],
+        "loops": ["loops-debug-running-total", "loops-predict-threshold"],
+        "functions": ["functions-debug-return", "functions-predict-counterexample"],
+        "collections": ["collections-debug-optional-field"],
+        "reliability": ["reliability-debug-later-record"]
+    ]
+
     private func chapter(_ id: String) throws -> Chapter {
         try XCTUnwrap(Curriculum.chapters.first { $0.id == id }, id)
     }
@@ -46,7 +56,9 @@ final class FoundationsCurriculumTests: XCTestCase {
             XCTAssertEqual(current.lessonSections.map(\.topic.id), originalHeadings[id]?.indices.map { "\(id)-section-\($0 + 1)" }, id)
             XCTAssertEqual(current.assessment.id, id == "decisions" ? "decisions-assessment-v2" : "\(id)-assessment")
             XCTAssertNil(current.assessment.expectedStarterError)
-            let labs = Array(current.exercises.dropFirst(3))
+            let expectedLabs = try XCTUnwrap(phase1ALabIDs[id], id)
+            let labs = Array(current.exercises.dropFirst(3).prefix(expectedLabs.count))
+            XCTAssertEqual(labs.map(\.id), expectedLabs, "Original Phase 1A order and identities remain unchanged: \(id)")
             XCTAssertEqual(labs.count, ["collections", "reliability"].contains(id) ? 1 : 2, id)
             for lab in labs {
                 XCTAssertTrue(lab.id.hasPrefix("\(id)-debug-") || lab.id.hasPrefix("\(id)-predict-"), lab.id)
@@ -68,6 +80,41 @@ final class FoundationsCurriculumTests: XCTestCase {
         XCTAssertTrue(additions.contains { $0.id.contains("-predict-") })
         XCTAssertTrue(try chapter("basics").lesson.contains("Understanding errors"))
         XCTAssertTrue(try chapter("functions").lesson.contains("Debugging systematically"))
+    }
+
+    func testIndependentPracticeAppendsNineDistinctActivitiesAfterImmutableFoundationPrefix() throws {
+        let expected: [String: [String]] = [
+            "basics": ["basics-transfer-delivery-note"],
+            "values": ["values-transfer-workshop-cost"],
+            "decisions": ["decisions-transfer-library-entry"],
+            "loops": ["loops-transfer-water-log"],
+            "functions": ["functions-transfer-ticket-total", "functions-refactor-batch-cost"],
+            "collections": ["collections-transfer-stock-report", "collections-maintenance-label-counts"],
+            "reliability": ["reliability-transfer-gradebook"]
+        ]
+        var additions: [Exercise] = []
+        for (id, ids) in expected {
+            let current = try chapter(id)
+            let oldCount = 3 + (try XCTUnwrap(phase1ALabIDs[id])).count
+            let tasks = Array(current.exercises.dropFirst(oldCount))
+            XCTAssertEqual(tasks.map(\.id), ids, id)
+            for task in tasks {
+                XCTAssertFalse(Curriculum.isAssessment(task.id))
+                XCTAssertEqual(Curriculum.activityID(for: task.id), task.id)
+                XCTAssertTrue(task.practiceProfile?.isWellFormed == true, task.id)
+                XCTAssertTrue(task.hasRequiredInstructionSections, task.id)
+                XCTAssertNil(task.expectedStarterError, task.id)
+                XCTAssertNotNil(task.effort, task.id)
+                XCTAssertFalse(task.effort?.estimated ?? true, task.id)
+            }
+            additions += tasks
+        }
+        XCTAssertEqual(additions.count, 9)
+        XCTAssertEqual(Set(additions.map(\.id)).count, 9)
+        XCTAssertEqual(additions.filter { $0.practiceProfile?.form == .transfer }.count, 7)
+        XCTAssertEqual(additions.filter { $0.practiceProfile?.form == .refactor }.count, 1)
+        XCTAssertEqual(additions.filter { $0.practiceProfile?.form == .maintenance }.count, 1)
+        XCTAssertEqual(additions.compactMap(\.effort).reduce(0) { $0 + $1.practiceXP }, 1_600)
     }
 
     func testStarterFailureMetadataIsOptionalAndRoundTripsWithoutChangingLegacyWork() throws {
@@ -100,7 +147,8 @@ final class FoundationsCurriculumTests: XCTestCase {
         let runner = PythonRunner()
         let python = ProcessInfo.processInfo.environment["PYTHON_TEACHER_TEST_PYTHON"] ?? "/usr/bin/python3"
         for chapter in Curriculum.chapters where chapter.track == .foundations {
-            for lab in chapter.exercises.dropFirst(3) {
+            for id in try XCTUnwrap(phase1ALabIDs[chapter.id]) {
+                let lab = try XCTUnwrap(chapter.exercises.first { $0.id == id }, id)
                 let result = try await runner.run(code: lab.starterCode, pythonPath: python)
                 if lab.expectedStarterError == "SyntaxError" {
                     XCTAssertFalse(result.passed, lab.id)

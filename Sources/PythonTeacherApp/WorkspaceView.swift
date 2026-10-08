@@ -16,6 +16,7 @@ struct WorkspaceView: View {
     @State private var confirmGenerationRepair = false
     @State private var lessonParts: [String: Int] = [:]
     @State private var rewardDetailsExpanded = false
+    @State private var practiceGuideExpanded = false
     @State private var experimentPresented = false
     @AppStorage(AppearanceKey.lessonLayout) private var lessonLayout = LessonLayout.paced
     @AppStorage(AppearanceKey.codeSize) private var codeSize = 14.0
@@ -23,8 +24,9 @@ struct WorkspaceView: View {
 
     let forceReducedMotion: Bool
 
-    init(assessmentTab: Int = 0, forceReducedMotion: Bool = false) {
+    init(assessmentTab: Int = 0, forceReducedMotion: Bool = false, practiceGuideExpanded: Bool = false) {
         _assessmentTab = State(initialValue: assessmentTab)
+        _practiceGuideExpanded = State(initialValue: practiceGuideExpanded)
         self.forceReducedMotion = forceReducedMotion
     }
 
@@ -96,6 +98,7 @@ struct WorkspaceView: View {
             experimentPresented = false
             if mode == .assessment { validationDetailsPresented = false; confirmGenerationRepair = false }
         }
+        .onChange(of: model.draftKey) { _, _ in practiceGuideExpanded = false }
         .appearanceEnvironment()
     }
 
@@ -238,6 +241,9 @@ struct WorkspaceView: View {
             Text(model.exercise.id.hasPrefix("generated-") ? "AI-GENERATED PRACTICE" : model.mode == .assessment ? "INDEPENDENT ASSESSMENT" : "REVIEWED PRACTICE")
                 .appFont(.caption, weight: .semibold).tracking(0.8).foregroundStyle(.teal)
             Text(model.exercise.title).appFont(.title2, weight: .bold).fixedSize(horizontal: false, vertical: true)
+            if model.mode == .practice, let guide = model.practiceGuide {
+                PracticeGuideView(guide: guide, isExpanded: $practiceGuideExpanded)
+            }
             DisclosureGroup(isExpanded: $rewardDetailsExpanded) {
                 Text(model.exerciseRewardDetails)
                     .appFont(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -579,6 +585,41 @@ struct WorkspaceView: View {
             Divider().frame(height: 10)
             Text("AI: \(model.requestCount)/\(model.progress.sessionRequestLimit) requests this launch")
         }.appFont(.caption2).foregroundStyle(.secondary).padding(.horizontal, 16).padding(.vertical, 7)
+    }
+}
+
+struct PracticeGuideView: View {
+    let guide: PracticeGuide
+    @Binding var isExpanded: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 4) {
+                Label(guide.form.title, systemImage: "pencil.and.outline")
+                Label(guide.scaffolding.title, systemImage: "list.bullet.rectangle")
+            }
+            .appFont(.caption).foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            DisclosureGroup(isExpanded: $isExpanded) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(guide.purpose).appFont(.callout).foregroundStyle(.secondary)
+                    Text("Skills to draw on").appFont(.headline)
+                    ForEach(Array(guide.skillTitles.enumerated()), id: \.offset) { _, title in
+                        MarkdownContent(text: "- \(title)")
+                    }
+                    Text("Reflection prompts").appFont(.headline)
+                    Text("Use these prompts in the reflection field below the editor. Your notes are optional in practice and are not automatically graded.")
+                        .appFont(.callout).foregroundStyle(.secondary)
+                    ForEach(guide.reflectionPrompts, id: \.self) { prompt in
+                        MarkdownContent(text: prompt)
+                    }
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
+            } label: {
+                Text("Skills and reflection").appFont(.callout)
+            }
+        }
     }
 }
 

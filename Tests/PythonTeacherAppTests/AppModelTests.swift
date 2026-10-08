@@ -650,6 +650,206 @@ final class AppModelTests: XCTestCase {
     }
 
     @MainActor
+    func testPracticeGuidesResolveCurrentAndPrerequisiteSectionTitlesWithoutInventingSkills() throws {
+        for chapter in model.chapters {
+            model.selectChapter(chapter.id)
+            let toolkit = try XCTUnwrap(model.curriculumGraph.closureIncludingSelf(of: chapter.id))
+            let sections = toolkit.flatMap(\.lessonSections).filter { $0.role != .overview }
+            for exercise in chapter.exercises {
+                model.selectExercise(exercise.id)
+                let profile = try XCTUnwrap(exercise.practiceProfile, exercise.id)
+                let guide = try XCTUnwrap(model.practiceGuide, exercise.id)
+                XCTAssertEqual(guide.form, profile.form)
+                XCTAssertEqual(guide.scaffolding, profile.scaffolding)
+                XCTAssertEqual(guide.skillTitles, profile.skillIDs.compactMap { id in sections.first { $0.topic.id == id }?.topic.title })
+                XCTAssertEqual(guide.reflectionPrompts, profile.reflectionPrompts)
+                XCTAssertFalse(guide.skillTitles.contains { $0.contains("-section-") })
+            }
+            model.selectMode(.assessment)
+            XCTAssertNil(model.practiceGuide)
+        }
+        let basics = try XCTUnwrap(model.curriculumGraph.chapter("basics"))
+        let values = try XCTUnwrap(model.curriculumGraph.chapter("values"))
+        let basicSkill = try XCTUnwrap(basics.lessonSections.first { $0.role != .overview })
+        let valueSkill = try XCTUnwrap(values.lessonSections.first { $0.role != .overview })
+        let profile = PracticeProfile(form: .transfer, scaffolding: .independent,
+                                      skillIDs: [basicSkill.topic.id, valueSkill.topic.id], reflectionPrompts: ["Why did you choose this approach?"])
+        let guide = try XCTUnwrap(PracticeGuide.resolve(profile, chapterID: values.id, graph: model.curriculumGraph))
+        XCTAssertEqual(guide.skillTitles, [basicSkill.topic.title, valueSkill.topic.title])
+        XCTAssertEqual(guide.form.title, "Apply in a new context")
+        XCTAssertEqual(guide.scaffolding.title, "Choose your approach")
+        XCTAssertNil(PracticeGuide.resolve(profile, chapterID: basics.id, graph: model.curriculumGraph))
+        let overview = try XCTUnwrap(basics.lessonSections.first { $0.role == .overview })
+        for ids in [[], [overview.topic.id], ["basics-section-999"], [basicSkill.topic.id, basicSkill.topic.id], ["opaque"]] {
+            let invalid = PracticeProfile(form: .write, scaffolding: .guided, skillIDs: ids, reflectionPrompts: ["Why?"])
+            XCTAssertNil(PracticeGuide.resolve(invalid, chapterID: basics.id, graph: model.curriculumGraph))
+        }
+        let malformed = PracticeProfile(form: .write, scaffolding: .guided, skillIDs: [basicSkill.topic.id], reflectionPrompts: [" "])
+        XCTAssertNil(PracticeGuide.resolve(malformed, chapterID: basics.id, graph: model.curriculumGraph))
+        XCTAssertNil(PracticeGuide.resolve(profile, chapterID: "missing", graph: model.curriculumGraph))
+    }
+
+    @MainActor
+    func testMissingMalformedAndUnresolvedProfilesFallBackWithoutChangingTheSelectedDraft() throws {
+        let original = model.chapter
+        var exercise = original.exercises[0]
+        let valid = try XCTUnwrap(exercise.practiceProfile)
+        var assessment = original.assessment
+        assessment.practiceProfile = valid
+        let profiles: [PracticeProfile?] = [nil,
+            PracticeProfile(form: .write, scaffolding: .guided, skillIDs: [], reflectionPrompts: []),
+            PracticeProfile(form: .transfer, scaffolding: .independent, skillIDs: ["values-section-2"], reflectionPrompts: ["Why?"])]
+        model.selectExercise(exercise.id)
+        let key = model.draftKey
+        model.code = "unchanged_saved_draft = 11"
+        model.reflection = "Unchanged saved reasoning"
+        model.flushSave()
+        for profile in profiles {
+            exercise.practiceProfile = profile
+            let chapter = Chapter(id: original.id, title: original.title, subtitle: original.subtitle,
+                                  lesson: original.lesson, exercises: [exercise], assessment: assessment, quiz: original.quiz,
+                                  sectionRoles: original.sectionRoles)
+            model = AppModel(store: model.store, chapters: [chapter])
+            XCTAssertNil(model.practiceGuide)
+            XCTAssertEqual(model.exercise.id, exercise.id)
+            XCTAssertEqual(model.draftKey, key)
+            XCTAssertEqual(model.code, "unchanged_saved_draft = 11")
+            XCTAssertEqual(model.reflection, "Unchanged saved reasoning")
+            model.selectMode(.assessment)
+            XCTAssertNotNil(model.exercise.practiceProfile)
+            XCTAssertNil(model.practiceGuide)
+            model.selectMode(.practice)
+            model.flushSave()
+        }
+    }
+
+    @MainActor
+    func testPracticeGuideLabelsDescribeTaskDesignWithoutRecordingAssistanceOrProgress() throws {
+        let forms: [(PracticeForm, String)] = [(.write, "Write code"), (.complete, "Complete code"), (.predict, "Predict behavior"),
+            (.debug, "Diagnose and repair"), (.counterexample, "Find a counterexample"), (.transfer, "Apply in a new context"),
+            (.refactor, "Refactor"), (.maintenance, "Change a requirement"), (.project, "Build a project")]
+        for (form, title) in forms { XCTAssertEqual(form.title, title) }
+        XCTAssertEqual(PracticeScaffolding.guided.title, "Step-by-step guidance")
+        XCTAssertEqual(PracticeScaffolding.light.title, "Some structure supplied")
+        XCTAssertEqual(PracticeScaffolding.independent.title, "Choose your approach")
+        let hints = model.progress.hintCounts
+        let attempts = model.progress.attempts.map(\.id)
+        let mastery = model.progress.masteredChapterIDs
+        let xp = model.progress.playerProgress.totalXP
+        let requests = model.requestCount
+        let conversation = model.progress.teacherConversations
+        for id in [model.chapter.exercises[0].id, "basics-transfer-delivery-note"] {
+            model.selectExercise(id)
+            let guide = try XCTUnwrap(model.practiceGuide)
+            XCTAssertTrue(guide.purpose.contains("not independent completion or chapter mastery"))
+            XCTAssertTrue(guide.purpose.contains("Hints remain available"))
+            model.selectMode(.lesson)
+            XCTAssertEqual(model.practiceGuide, guide)
+        }
+        XCTAssertEqual(model.progress.hintCounts, hints)
+        XCTAssertEqual(model.progress.attempts.map(\.id), attempts)
+        XCTAssertEqual(model.progress.masteredChapterIDs, mastery)
+        XCTAssertEqual(model.progress.playerProgress.totalXP, xp)
+        XCTAssertEqual(model.requestCount, requests)
+        XCTAssertEqual(model.progress.teacherConversations, conversation)
+        XCTAssertFalse(model.teacherBusy)
+    }
+
+    @MainActor
+    func testNineAdditivePracticeDraftsAndReflectionsResumeWithoutChangingSavedWork() throws {
+        model.selectChapter("values")
+        model.selectExercise("values-label")
+        let originalKey = model.draftKey
+        model.code = "raw_label = '  ORBIT  '\nclean_label = raw_label.strip()"
+        model.reflection = "My original reasoning"
+        model.progress.hintCounts[originalKey] = 2
+        model.progress.hintCounts[originalKey + ":builtin"] = 1
+        model.progress.attempts.append(Attempt(chapterID: "values", exerciseID: "values-label", mode: .practice,
+                                              code: model.code, testsPassed: true, hintCount: 2, reflection: model.reflection,
+                                              effort: model.exercise.effort))
+        model.flushSave()
+        let original = try model.store.load()
+        model = AppModel(store: model.store)
+        XCTAssertEqual(model.exercise.id, "values-label")
+        XCTAssertEqual(model.code, original.drafts[originalKey])
+        XCTAssertEqual(model.reflection, original.reflections[originalKey])
+        XCTAssertNotNil(model.practiceGuide)
+        let tasks = ["basics-transfer-delivery-note", "values-transfer-workshop-cost", "decisions-transfer-library-entry",
+                     "loops-transfer-water-log", "functions-transfer-ticket-total", "functions-refactor-batch-cost",
+                     "collections-transfer-stock-report", "collections-maintenance-label-counts", "reliability-transfer-gradebook"]
+        var keys: [String: String] = [:]
+        for (index, id) in tasks.enumerated() {
+            let chapter = try XCTUnwrap(model.chapters.first { $0.exercises.contains { $0.id == id } })
+            model.selectChapter(chapter.id)
+            XCTAssertEqual(model.exercises.map(\.id), chapter.exercises.map(\.id))
+            model.selectExercise(id)
+            XCTAssertEqual(model.exercise.id, id)
+            XCTAssertEqual(model.code, model.exercise.starterCode)
+            XCTAssertEqual(model.reflection, "")
+            keys[id] = model.draftKey
+            model.code = "synthetic_draft = \(index)"
+            model.reflection = "Separate reflection \(index)"
+        }
+        model.flushSave()
+        model = AppModel(store: model.store)
+        XCTAssertEqual(model.exercise.id, tasks.last)
+        for (index, id) in tasks.enumerated() {
+            let chapter = try XCTUnwrap(model.chapters.first { $0.exercises.contains { $0.id == id } })
+            model.selectChapter(chapter.id)
+            model.selectExercise(id)
+            XCTAssertEqual(model.draftKey, keys[id])
+            XCTAssertEqual(model.code, "synthetic_draft = \(index)")
+            XCTAssertEqual(model.reflection, "Separate reflection \(index)")
+            model.selectMode(.assessment)
+            XCTAssertNil(model.practiceGuide)
+            XCTAssertNotEqual(model.draftKey, keys[id])
+            model.selectMode(.practice)
+            XCTAssertEqual(model.code, "synthetic_draft = \(index)")
+        }
+        model.selectChapter("values")
+        model.selectExercise("values-label")
+        XCTAssertEqual(model.code, original.drafts[originalKey])
+        XCTAssertEqual(model.reflection, original.reflections[originalKey])
+        XCTAssertEqual(model.hintCount, 2)
+        XCTAssertEqual(model.builtInHintCount, 1)
+        XCTAssertEqual(model.progress.attempts.map(\.id), original.attempts.map(\.id))
+        XCTAssertEqual(model.progress.playerProgress.totalXP, original.playerProgress.totalXP)
+        XCTAssertEqual(model.progress.masteredChapterIDs, original.masteredChapterIDs)
+        model.flushSave()
+        let saved = try model.store.load()
+        XCTAssertEqual(saved.drafts[originalKey], original.drafts[originalKey])
+        XCTAssertEqual(saved.reflections[originalKey], original.reflections[originalKey])
+        XCTAssertEqual(saved.hintCounts, original.hintCounts)
+    }
+
+    @MainActor
+    func testUnprofiledGeneratedAndLegacyPracticeKeepTheirOriginalBehavior() throws {
+        var generated = model.exercise
+        generated.id = "generated-synthetic-unprofiled"
+        generated.practiceProfile = nil
+        model.progress.generatedExercises[model.chapter.id] = [generated]
+        model.selectExercise(generated.id)
+        model.code = "saved_generated_draft = 7"
+        model.reflection = "Saved generated reflection"
+        XCTAssertNil(model.practiceGuide)
+        model.flushSave()
+        model = AppModel(store: model.store)
+        XCTAssertEqual(model.exercise, generated)
+        XCTAssertNil(model.practiceGuide)
+        XCTAssertEqual(model.code, "saved_generated_draft = 7")
+        XCTAssertEqual(model.reflection, "Saved generated reflection")
+        model.selectChapter("decisions")
+        let legacy = try XCTUnwrap(Curriculum.legacyExercises(chapterID: "decisions", mode: .practice).first)
+        let key = "decisions:practice:\(legacy.id)"
+        model.progress.drafts[key] = "saved_legacy_draft = 9"
+        model.progress.reflections[key] = "Saved legacy reflection"
+        model.selectExercise(legacy.id)
+        XCTAssertNil(model.practiceGuide)
+        XCTAssertEqual(model.code, "saved_legacy_draft = 9")
+        XCTAssertEqual(model.reflection, "Saved legacy reflection")
+    }
+
+    @MainActor
     func testDraftsResumeSeparatelyForPracticeAndAssessment() throws {
         model.selectMode(.practice)
         model.code = "practice_draft = 17"
@@ -2033,6 +2233,88 @@ final class AppModelTests: XCTestCase {
     }
 
     @MainActor
+    func testTeacherSnapshotIncludesOnlyResolvedReviewedPracticeDesignOnExplicitRequest() async throws {
+        var snapshots: [[String: Any]] = []
+        let session = mockTeacherSession { snapshots.append($0) }
+        defer { session.invalidateAndCancel() }
+        model.selectMode(.practice)
+        let guide = try XCTUnwrap(model.practiceGuide)
+        XCTAssertEqual(model.requestCount, 0)
+        XCTAssertEqual(model.hintCount, 0)
+        XCTAssertTrue(snapshots.isEmpty)
+        model.askTeacher("Which taught skills could I use?")
+        try await waitForGeneration()
+        XCTAssertEqual(snapshots.count, 1)
+        let snapshot = try XCTUnwrap(snapshots.last)
+        let profile = try XCTUnwrap(snapshot["practiceProfile"] as? [String: Any])
+        XCTAssertEqual(profile["form"] as? String, guide.form.rawValue)
+        XCTAssertEqual(profile["scaffolding"] as? String, guide.scaffolding.rawValue)
+        XCTAssertEqual(profile["skillTitles"] as? [String], guide.skillTitles)
+        XCTAssertEqual(profile["reflectionPrompts"] as? [String], guide.reflectionPrompts)
+        XCTAssertEqual(profile["purpose"] as? String, guide.purpose)
+        XCTAssertEqual(snapshot["currentCode"] as? String, model.code)
+        XCTAssertNil(snapshot["testCode"])
+        XCTAssertNil(snapshot["referenceSolution"])
+        XCTAssertEqual(model.requestCount, 1)
+        XCTAssertEqual(model.hintCount, 1)
+        model.revealSolution()
+        model.askTeacher("Explain the task design without revealing its solution.")
+        try await waitForGeneration()
+        XCTAssertNil(snapshots.last?["referenceSolution"])
+        XCTAssertFalse(model.teacherHistory.contains { $0.text.contains("Reference solution") })
+        var generated = model.exercise
+        generated.id = "generated-synthetic-profile-is-not-authority"
+        model.progress.generatedExercises[model.chapter.id] = [generated]
+        model.selectExercise(generated.id)
+        XCTAssertNil(model.practiceGuide)
+        model.askTeacher("Read this saved practice task.")
+        try await waitForGeneration()
+        XCTAssertNil(snapshots.last?["practiceProfile"])
+        generated.practiceProfile = nil
+        model.progress.generatedExercises[model.chapter.id] = [generated]
+        model.askTeacher("Read the unprofiled practice task.")
+        try await waitForGeneration()
+        XCTAssertNil(snapshots.last?["practiceProfile"])
+        model.selectChapter("decisions")
+        model.overrideUnlock()
+        let legacy = try XCTUnwrap(Curriculum.legacyExercises(chapterID: "decisions", mode: .practice).first)
+        model.progress.drafts["decisions:practice:\(legacy.id)"] = legacy.starterCode
+        model.selectExercise(legacy.id)
+        model.askTeacher("Read my saved legacy task.")
+        try await waitForGeneration()
+        XCTAssertNil(snapshots.last?["practiceProfile"])
+        let count = snapshots.count
+        let requests = model.requestCount
+        let hints = model.progress.hintCounts
+        model.selectMode(.assessment)
+        XCTAssertNil(model.practiceGuide)
+        model.askTeacher("Do not send assessment metadata.")
+        XCTAssertEqual(snapshots.count, count)
+        XCTAssertEqual(model.requestCount, requests)
+        XCTAssertEqual(model.progress.hintCounts, hints)
+        XCTAssertFalse(model.teacherBusy)
+    }
+
+    @MainActor
+    func testProfileReflectionPromptsDoNotAddPracticeGradingRules() async throws {
+        model.selectExercise("basics-transfer-delivery-note")
+        XCTAssertNotNil(model.practiceGuide)
+        model.reflection = ""
+        model.code = model.exercise.referenceSolution
+        model.runCode(test: true)
+        try await waitForRun()
+        XCTAssertEqual(model.progress.attempts.last?.testsPassed, true)
+        XCTAssertEqual(model.progress.attempts.last?.reflection, "")
+        XCTAssertEqual(model.hintCount, 0)
+        XCTAssertTrue(model.progress.masteredChapterIDs.isEmpty)
+        model.reflection = "A short personal note."
+        model.runCode(test: true)
+        try await waitForRun()
+        XCTAssertEqual(model.progress.attempts.last?.testsPassed, true)
+        XCTAssertEqual(model.progress.attempts.last?.reflection, "A short personal note.")
+    }
+
+    @MainActor
     func testTeacherSnapshotsTrackEditsRerunsChecksAndClearedEvidence() async throws {
         var snapshots: [[String: Any]] = []
         let session = mockTeacherSession { snapshots.append($0) }
@@ -2875,6 +3157,62 @@ final class AppModelTests: XCTestCase {
             hosting.layoutSubtreeIfNeeded()
             XCTAssertTrue(model.isOutputStale)
             try saveSnapshot(of: hosting, name: "experiment-output-stale-\(Int(size.width))")
+        }
+    }
+
+    @MainActor
+    func testNativePracticeGuidesRenderCollapsedAndExpandedWithoutChangingEditorGeometry() async throws {
+        _ = NSApplication.shared
+        let tasks = [("basics", "basics-total"), ("basics", "basics-transfer-delivery-note"),
+                     ("functions", "functions-refactor-batch-cost"), ("collections", "collections-maintenance-label-counts")]
+        func descendants(_ view: NSView) -> [NSView] { view.subviews.flatMap { [$0] + descendants($0) } }
+        for (chapterID, exerciseID) in tasks {
+            model.selectChapter(chapterID)
+            if !model.isUnlocked { model.overrideUnlock() }
+            model.selectExercise(exerciseID)
+            let exercise = model.exercise
+            XCTAssertEqual(exercise.id, exerciseID)
+            XCTAssertNotNil(model.practiceGuide)
+            var unprofiled = exercise
+            unprofiled.id = "generated-synthetic-layout-baseline"
+            unprofiled.practiceProfile = nil
+            model.progress.generatedExercises[chapterID] = [unprofiled]
+            for size in [NSSize(width: 1380, height: 900), NSSize(width: 1080, height: 740)] {
+                var baseline: NSRect?
+                for variant in ["unprofiled", "collapsed", "expanded"] {
+                    model.selectExercise(variant == "unprofiled" ? unprofiled.id : exerciseID)
+                    let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+                    window.isReleasedWhenClosed = false
+                    let hosting = NSHostingView(rootView: WorkspaceView(practiceGuideExpanded: variant == "expanded").environmentObject(model))
+                    window.contentView = hosting
+                    window.orderFront(nil)
+                    defer { window.close() }
+                    try await Task.sleep(for: .milliseconds(200))
+                    hosting.layoutSubtreeIfNeeded()
+                    let editor = try XCTUnwrap(descendants(hosting).compactMap { $0 as? PythonTextView }.first)
+                    let scroll = try XCTUnwrap(editor.enclosingScrollView)
+                    let frame = hosting.convert(scroll.bounds, from: scroll)
+                    if let baseline {
+                        XCTAssertEqual(frame.minX, baseline.minX, accuracy: 1)
+                        XCTAssertEqual(frame.minY, baseline.minY, accuracy: 1)
+                        XCTAssertEqual(frame.width, baseline.width, accuracy: 1)
+                        XCTAssertEqual(frame.height, baseline.height, accuracy: 1)
+                    } else {
+                        baseline = frame
+                        XCTAssertNil(model.practiceGuide)
+                    }
+                    XCTAssertEqual(hosting.frame.width, size.width, accuracy: 1)
+                    XCTAssertEqual(hosting.frame.height, size.height, accuracy: 1)
+                    XCTAssertEqual(model.code, exercise.starterCode)
+                    XCTAssertEqual(model.reflection, "")
+                    XCTAssertEqual(model.hintCount, 0)
+                    XCTAssertEqual(model.requestCount, 0)
+                    XCTAssertTrue(model.progress.attempts.isEmpty)
+                    XCTAssertTrue(model.progress.masteredChapterIDs.isEmpty)
+                    XCTAssertEqual(model.progress.playerProgress.totalXP, 0)
+                    try saveSnapshot(of: hosting, name: "practice-guide-\(exerciseID)-\(variant)-\(Int(size.width))")
+                }
+            }
         }
     }
 

@@ -97,6 +97,89 @@ extension Curriculum {
 
         > **Note:** "Do not modify the input" means leave the supplied list's order and items unchanged. Reading, counting, and building a new list are fine.
 
+        ### Plan from a specification
+
+        A **specification** describes the required behavior, not the code to write. Before editing, separate its inputs, result, and boundary cases. Then choose small steps whose results you can check separately. This is **decomposition**: dividing a problem into understandable pieces.
+
+        For a delivery charge, the inputs might be item count, box capacity, and price per box; the result is a total price. Small steps could find the number of boxes and then their charge. Write down what zero items and an exactly full box should do before choosing expressions.
+
+        ### Choose meaningful names
+
+        Names should explain what a value represents. `box_count` distinguishes a count from `price_per_box`; `x` and `y` do not. Including units, such as `price_cents`, helps prevent mixing money with counts. Renaming a local variable consistently should not change the returned result.
+
+        ### Refactor without changing behavior
+
+        **Refactoring** changes how working code is organized without changing its promised behavior. A **helper function** handles one smaller part for another function, its caller. Here is a working calculation before refactoring:
+
+        ```python
+        def delivery_charge(item_count, box_capacity, price_per_box):
+            return ((item_count + box_capacity - 1) // box_capacity) * price_per_box
+
+        print(delivery_charge(7, 3, 4))
+        print(delivery_charge(0, 3, 4))
+        ```
+
+        ```text
+        12
+        0
+        ```
+
+        Here two small helper functions give names to the steps. Define each helper before the caller uses it. The same checks must still pass after the change:
+
+        ```python
+        def boxes_needed(item_count, box_capacity):
+            return (item_count + box_capacity - 1) // box_capacity
+
+        def boxes_charge(box_count, price_per_box):
+            return box_count * price_per_box
+
+        def delivery_charge(item_count, box_capacity, price_per_box):
+            box_count = boxes_needed(item_count, box_capacity)
+            return boxes_charge(box_count, price_per_box)
+
+        print(delivery_charge(7, 3, 4))
+        print(delivery_charge(0, 3, 4))
+        assert delivery_charge(6, 3, 4) == 8
+        ```
+
+        ```text
+        12
+        0
+        ```
+
+        A shared helper is especially useful when several callers repeat a rule: they can call that helper instead of maintaining separate copies. Shorter code is not the goal; a clear responsibility and preserved behavior are.
+
+        ### Read a signature and docstring
+
+        The **signature** is the definition line: it tells you the function's name and parameter order. A **docstring** is a string placed first inside the function body to document its contract. Triple quotes, such as three single quotes `'''`, surround a string that can span several lines. They do not run a calculation or replace `return`.
+
+        ```python
+        def boxes_needed(item_count, box_capacity):
+            '''Return an integer box count for nonnegative items and positive capacity.
+            Count a partial box; zero items needs zero boxes.
+            '''
+            return (item_count + box_capacity - 1) // box_capacity
+
+        print(boxes_needed(7, 3))
+        ```
+
+        ```text
+        3
+        ```
+
+        Read the signature to know how to call `boxes_needed(7, 3)`, then the docstring to know what it promises. Checks can establish whether particular calls meet that contract; the presence of documentation alone does not establish its accuracy.
+
+        ### Comments explain why
+
+        A **comment** begins with `#`; Python ignores the rest of that line. Unlike a docstring, it is not a string belonging to a function. Use a comment to explain a reason that the code cannot express clearly, rather than merely repeating the operation. These illustrations are text, not runnable lesson examples:
+
+        ```text
+        Less useful: total += charge  # Add charge to total
+        More useful: # Charge each booking separately because boxes cannot be shared.
+        ```
+
+        Prefer meaningful names and a clear contract first. Comments and docstrings help a reader; neither substitutes for checks or proves that an explanation is good.
+
         ## Read part of a string with a slice
 
         Strings, like lists, use zero-based indexing. In `text[0]`, the brackets select the first character.
@@ -510,7 +593,158 @@ extension Curriculum {
                      "def count_short_titles(titles, max_chars):\n    count = 0\n    for title in titles:\n        if len(title) <= max_chars:\n            count += 1\n    return count\n\ncounterexample = ['']\npredicted_count = 0\nexpected_count = 1\n",
                      "assert counterexample == [''], 'keep the smallest failing list as evidence'\nassert type(predicted_count) is int and predicted_count == 0\nassert type(expected_count) is int and expected_count == 1\nassert count_short_titles(counterexample, 0) == expected_count\nassert counterexample == ['']\nassert type(count_short_titles(counterexample, 0)) is int\nassert count_short_titles([], 3) == 0\nassert type(count_short_titles([], 3)) is int\ntitles = ['a', 'bb', 'ccc', 'bb']\nassert count_short_titles(titles, 2) == 3\nassert type(count_short_titles(titles, 2)) is int\nassert titles == ['a', 'bb', 'ccc', 'bb']\nassert count_short_titles([' ', ''], 0) == 1\nassert count_short_titles(['A B', '  ', 'AB'], 2) == 2\nassert count_short_titles(['abcd'], 3) == 0\nassert count_short_titles([''], 5) == 1\nassert count_short_titles(titles, 1) == 1\nassert count_short_titles(titles, 2) == 3\nassert titles == ['a', 'bb', 'ccc', 'bb']\n",
                      ["A counterexample must make the observed and required results differ. The empty list gives zero under both rules, so it is not evidence of a failure.", "With a zero-character limit, try one string with no characters. Predict the original comparison before looking at the required phrase 'at most'.", "The minimal evidence list is ['']: save 0 as the original prediction and 1 as the required count. Then make the function include exact-length matches as well as shorter strings, without changing that evidence."],
-                     effort: .init(scopeUnits: 2))
+                     effort: .init(scopeUnits: 2)),
+            exercise("functions-transfer-ticket-total", "Price a group visit", """
+                     Goal:
+                     Turn a ticket office's pricing specification into a reusable function. Choose your own decomposition using the functions, conditions, and loops you have learned.
+
+                     Starting code:
+                     - Keep `def ticket_total(ages, child_price, adult_price, child_boundary):` unchanged.
+                     - Replace `return 0` with your solution. You may add helpers, but none are required.
+                     - All inputs are valid: `ages` is a list of nonnegative integer ages; both prices and `child_boundary` are nonnegative integers. Prices are whole credits, not fractional money.
+
+                     Your task:
+                     1. Return the integer total ticket price for the group. Each age strictly below `child_boundary` costs `child_price`; each age equal to or above it costs `adult_price`.
+                     2. Count repeated ages as separate visitors. An empty group costs the integer `0`.
+                     3. Leave the supplied list's items and order unchanged. Each call must use its own arguments, with no leftover result from a previous group. Return the total rather than printing it; no invalid-input handling is needed.
+
+                     Expected result:
+                     - `ticket_total([5, 12, 30, 5], 4, 9, 12)` returns `26`.
+                     - `ticket_total([11, 12, 13], 4, 9, 12)` returns `22`.
+                     - `ticket_total([], 4, 9, 12)` returns `0`.
+                     - `ticket_total([0, 2], 3, 8, 0)` returns `16`.
+                     - `ticket_total([4, 4], 0, 7, 10)` returns `0`.
+
+                     Check:
+                     Choose **Check solution**. It makes multiple calls with changed prices and boundaries, empty groups, repeated ages, and free tickets, and checks integer results and unchanged input. The examples specify behavior, not a required algorithm.
+                     """,
+                     "def ticket_total(ages, child_price, adult_price, child_boundary):\n    return 0\n",
+                     """
+                     def ticket_total(ages, child_price, adult_price, child_boundary):
+                         total = 0
+                         for age in ages:
+                             if age < child_boundary:
+                                 total += child_price
+                             else:
+                                 total += adult_price
+                         return total
+                     """,
+                     """
+                     assert ticket_total([5, 12, 30, 5], 4, 9, 12) == 26
+                     assert type(ticket_total([5, 12, 30, 5], 4, 9, 12)) is int
+                     assert ticket_total([], 4, 9, 12) == 0
+                     assert type(ticket_total([], 4, 9, 12)) is int
+                     assert ticket_total([11, 12, 13], 4, 9, 12) == 22
+                     assert ticket_total([12], 4, 9, 12) == 9
+                     assert ticket_total([0, 2], 3, 8, 0) == 16
+                     assert ticket_total([4, 4], 0, 7, 10) == 0
+                     assert ticket_total([11, 12], 4, 0, 12) == 4
+                     assert ticket_total([7, 8, 9], 8, 2, 8) == 12
+                     ages = [5, 12, 30, 5]
+                     assert ticket_total(ages, 4, 9, 12) == 26
+                     assert ages == [5, 12, 30, 5]
+                     assert ticket_total([1], 6, 11, 2) == 6
+                     assert ticket_total(ages, 2, 5, 13) == 11
+                     assert ages == [5, 12, 30, 5]
+                     assert ticket_total(ages, 4, 9, 12) == 26
+                     assert ages == [5, 12, 30, 5]
+                     """,
+                     ["Separate the input contract from the result. What price applies to a visitor exactly at the boundary, and what should an empty group cost?", "A repeated age represents another ticket, not a duplicate to discard. Consider how you can keep a total local to each call while reading every visitor.", "One approach starts a local total at 0, visits each age, and adds child_price for age < child_boundary or adult_price otherwise. Return only after every visitor has been processed."],
+                     effort: .init(scopeUnits: 2),
+                     practiceProfile: .init(form: .transfer, scaffolding: .independent,
+                                            skillIDs: ["functions-section-1", "loops-section-3"],
+                                            reflectionPrompts: ["How did you turn the ticket rules into smaller responsibilities without being given an algorithm?", "Which call distinguishes an age at child_boundary from one just below it?"])),
+            exercise("functions-refactor-batch-cost", "Share a batch pricing rule", """
+                     Goal:
+                     Refactor working duplicated calculations into a shared helper without changing the total cost of two separate orders. A batch holds at most `batch_size` items; each started batch costs `price_per_batch` whole credits. Orders cannot share a batch.
+
+                     Starting code:
+                     - `total_batch_cost(first_count, second_count, batch_size, price_per_batch)` already returns correct totals, but repeats the batch calculation.
+                     - `batch_cost(item_count, batch_size, price_per_batch)` has a placeholder body. Keep both definition lines and replace the placeholder; then change the total function to reuse it.
+                     - All counts and prices are nonnegative integers; `batch_size` is a positive integer. No invalid-input validation is required.
+
+                     Your task:
+                     1. Make `batch_cost` return an integer charge for one order, including a partly filled last batch. Zero items costs `0`; an exact multiple adds no extra batch.
+                     2. Put a docstring first in the helper body describing its inputs and returned charge, including zero and partial batches. Triple-quoted strings are explained in the lesson.
+                     3. Make `total_batch_cost` call `batch_cost` once for each order, including a zero-item order, using the supplied size and price. Return the integer total of those two helper results, with fresh results on every call.
+                     4. Preserve the existing public totals. Do not combine both orders' items before pricing: the orders need separate batches.
+
+                     Expected result:
+                     - `batch_cost(0, 4, 6)` returns `0`, `batch_cost(4, 4, 6)` returns `6`, and `batch_cost(5, 4, 6)` returns `12`.
+                     - `total_batch_cost(5, 3, 4, 6)` still returns `18`.
+                     - `total_batch_cost(1, 1, 4, 6)` still returns `12`, not `6`.
+                     - `total_batch_cost(0, 8, 4, 6)` still returns `12`.
+
+                     Check:
+                     Choose **Check solution**. It checks helper and total results across zero, exact, partial, and changed-price cases. To verify actual helper reuse, the checker temporarily replaces `batch_cost` in the caller's function namespace (`__globals__`) with a recording helper, then restores it. You do not implement this inspection: just call the named helper normally and use its returned charges. The checker verifies helper reuse, not code length, style, or AI judgment. A nonempty docstring check confirms documentation exists; it does not grade explanation quality.
+                     """,
+                     """
+                     def batch_cost(item_count, batch_size, price_per_batch):
+                         '''Describe the one-order charge contract here.'''
+                         return 0
+
+                     def total_batch_cost(first_count, second_count, batch_size, price_per_batch):
+                         first_cost = ((first_count + batch_size - 1) // batch_size) * price_per_batch
+                         second_cost = ((second_count + batch_size - 1) // batch_size) * price_per_batch
+                         return first_cost + second_cost
+                     """,
+                     """
+                     def batch_cost(item_count, batch_size, price_per_batch):
+                         '''Return an integer charge for a nonnegative item count and price.
+                         The batch size is positive. Count a partial batch; zero items costs zero.
+                         '''
+                         batch_count = (item_count + batch_size - 1) // batch_size
+                         return batch_count * price_per_batch
+
+                     def total_batch_cost(first_count, second_count, batch_size, price_per_batch):
+                         first_cost = batch_cost(first_count, batch_size, price_per_batch)
+                         second_cost = batch_cost(second_count, batch_size, price_per_batch)
+                         return first_cost + second_cost
+                     """,
+                     """
+                     assert batch_cost(5, 4, 6) == 12
+                     assert type(batch_cost(5, 4, 6)) is int
+                     assert batch_cost(0, 4, 6) == 0
+                     assert type(batch_cost(0, 4, 6)) is int
+                     assert batch_cost(3, 4, 6) == 6
+                     assert batch_cost(4, 4, 6) == 6
+                     assert batch_cost(8, 4, 6) == 12
+                     assert batch_cost(7, 3, 2) == 6
+                     assert batch_cost(2, 1, 9) == 18
+                     assert batch_cost(5, 4, 0) == 0
+                     assert total_batch_cost(5, 3, 4, 6) == 18
+                     assert type(total_batch_cost(5, 3, 4, 6)) is int
+                     assert total_batch_cost(1, 1, 4, 6) == 12
+                     assert total_batch_cost(0, 8, 4, 6) == 12
+                     assert total_batch_cost(8, 0, 4, 6) == 12
+                     assert total_batch_cost(0, 0, 4, 6) == 0
+                     assert type(total_batch_cost(0, 0, 4, 6)) is int
+                     assert total_batch_cost(7, 3, 3, 2) == 8
+                     assert total_batch_cost(5, 3, 4, 0) == 0
+                     assert total_batch_cost(5, 3, 4, 6) == 18
+                     assert isinstance(batch_cost.__doc__, str) and batch_cost.__doc__.strip(), 'Add a nonempty helper docstring.'
+                     helper_calls = []
+                     def recording_batch_cost(item_count, batch_size, price_per_batch):
+                         helper_calls.append([item_count, batch_size, price_per_batch])
+                         return item_count * 11 + 7
+                     caller_names = total_batch_cost.__globals__
+                     saved_helper = caller_names['batch_cost']
+                     try:
+                         caller_names['batch_cost'] = recording_batch_cost
+                         assert total_batch_cost(5, 3, 4, 6) == 102, 'Return the total of both helper results.'
+                         assert sorted(helper_calls) == [[3, 4, 6], [5, 4, 6]], 'Call the helper once per order with its inputs.'
+                         helper_calls.clear()
+                         assert total_batch_cost(0, 2, 3, 9) == 36
+                         assert sorted(helper_calls) == [[0, 3, 9], [2, 3, 9]]
+                     finally:
+                         caller_names['batch_cost'] = saved_helper
+                     assert total_batch_cost(5, 3, 4, 6) == 18
+                     """,
+                     ["The two existing calculations already behave correctly. Identify the changing item count and the size and price that both calculations use.", "Give the single-order calculation to batch_cost. Keep the counts separate: two one-item orders still require two batches even when both would fit into one.", "Inside total_batch_cost, call batch_cost(first_count, batch_size, price_per_batch) and batch_cost(second_count, batch_size, price_per_batch), then return their total. In the helper, round up the batch count before multiplying by the price."],
+                     effort: .init(scopeUnits: 2),
+                     practiceProfile: .init(form: .refactor, scaffolding: .light,
+                                            skillIDs: ["functions-section-1", "functions-section-5"],
+                                            reflectionPrompts: ["Which batch-cost examples showed that moving the duplicated calculation preserved behavior?", "Why must total_batch_cost use both helper results instead of pricing the combined item count?", "What does your helper docstring tell a caller about zero items and a partial batch?"]))
         ],
         assessment: exercise("functions-assessment", "Find the first usable candidate", """
                              Goal:

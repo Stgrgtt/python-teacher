@@ -79,10 +79,12 @@ final class TeacherClientTests: XCTestCase {
         let authored = try XCTUnwrap(Curriculum.chapters.flatMap(\.exercises).first { $0.checkPlan != nil })
         payload["checkPlan"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(XCTUnwrap(authored.checkPlan)))
         payload["expectedStarterError"] = "SyntaxError"
+        payload["practiceProfile"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(XCTUnwrap(authored.practiceProfile)))
         let text = String(decoding: try JSONSerialization.data(withJSONObject: payload), as: UTF8.self)
         let decoded = try TeacherClient.decodeExercise(text, requiredCoverage: topics)
         XCTAssertNil(decoded.checkPlan)
         XCTAssertNil(decoded.expectedStarterError)
+        XCTAssertNil(decoded.practiceProfile)
         let response = try generationResponse(payload: payload)
         let session = makeSession { request in
             let body = try self.body(of: request)
@@ -97,6 +99,7 @@ final class TeacherClientTests: XCTestCase {
             XCTAssertEqual(Set(properties.keys), Set(["title", "instructions", "starterCode", "referenceSolution", "testCode", "hints", "coverage"]))
             XCTAssertNil(properties["checkPlan"])
             XCTAssertNil(properties["expectedStarterError"])
+            XCTAssertNil(properties["practiceProfile"])
             return response
         }
         defer { session.invalidateAndCancel() }
@@ -104,6 +107,7 @@ final class TeacherClientTests: XCTestCase {
             .generate(chapter: chapter, options: options)
         XCTAssertNil(generated.checkPlan)
         XCTAssertNil(generated.expectedStarterError)
+        XCTAssertNil(generated.practiceProfile)
         XCTAssertEqual(generated.referenceSolution, decoded.referenceSolution)
         XCTAssertEqual(generated.testCode, decoded.testCode)
     }

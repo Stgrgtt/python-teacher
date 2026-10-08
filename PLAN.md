@@ -14,7 +14,7 @@ A launchable Mac application with a native code editor, a reviewed foundational 
 
 The user approved starting the review proposal with documentation first, parallel implementation where file ownership is independent, and validation between phases. This is a staged overhaul, not one unreviewable change. The checklist below is the source of truth for the entire proposal; unchecked work is not delivered.
 
-- Current delivery branch: `feature/readable-checks`, based on the user-committed/pushed Phase 1A checkpoint `9e5e9f5` (`feature/debugging-foundations`, matching its origin tracking ref). Phase 1A was based on `18f3f73` (`feature/readable-learning-panel`), itself three commits ahead of `develop`. Preserve these stacked dependencies for eventual integration into `develop`.
+- Current delivery branch: `feature/independent-practice`, created from freshly fetched `origin/develop` at `b0cf497` after verifying PR #6 (`feature/readable-checks`) is merged. Phase 1B is checkpoint `32e4992`; the merged tree matches it exactly. Phase 1A was checkpoint `9e5e9f5`. No uncommitted work was carried into the new branch, and the local develop branch was not rewritten.
 - Create a new type-prefixed branch for each subsequent delivery slice. Do not implement on or merge into `develop` during this work. The initial Phase 1A pass did not commit, push, replace the package, or restart the running app. In the follow-up, the user requested packaging, checkpoint/push, and a new Phase 1B branch; package replacement was explicitly confirmed. Checkpoint/push and the branch transition must complete before Phase 1B implementation.
 - Parallel workers own distinct files; one integration owner owns shared models, catalog contracts, docs, and cross-cutting validation. Independent review follows implementation.
 - Every slice records its exact tests, failures, skips, native rendering evidence, and unverified manual/live behavior before the next slice starts. Known baseline failures are not silently waived or hidden by weaker assertions.
@@ -42,7 +42,7 @@ Goal: learners can read a failure, navigate to their code, apply a repeatable in
 - [x] Add regression tests for diagnostics, stale source, editor selection/undo/Unicode, no assessment coaching, legacy decoding, lab references/starters, plausible wrong repairs, taught syntax, and heading/ID stability.
 - [x] Validate focused suites, full `swift test`, native failure-card rendering at default/minimum sizes, and `git diff --check`; review source and record exact outcomes below. Full-suite failures match the measured baseline; this is not a green full suite. Hands-on usability is a separate outstanding check.
 
-### Phase 1B — readable checks and safe experiments (current slice)
+### Phase 1B — readable checks and safe experiments (checkpoint `32e4992`, merged in PR #6)
 
 Implementation contract, recorded before source changes:
 - [x] Verify clean Phase 1A checkpoint `9e5e9f5` and create `feature/readable-checks`. The recorded 288-test Phase 1A result (seven known layout failures / 18 assertions) is this slice's baseline. No new commit/push, package replacement, running-app restart, or develop merge is part of this slice.
@@ -62,7 +62,7 @@ Implementation contract, recorded before source changes:
 
 ### Phase 1B implementation evidence — 2026-10-08
 
-**Implemented on `feature/readable-checks`, based on user checkpoint `9e5e9f5`; uncommitted.** Two design investigations preceded four disjoint implementation workers and two independent read-only reviews (runner/model safety and app/generation behavior). The integration owner handled shared contracts, regression follow-ups, execution of all tests, and documentation. No commit, push, merge to develop, package replacement, live API call, personal-data migration, or running-app restart was performed in this slice.
+**Implemented on `feature/readable-checks`, based on user checkpoint `9e5e9f5`; initially left uncommitted. Subsequently committed/pushed by the user as `32e4992` and merged in PR #6 (`b0cf497`).** Two design investigations preceded four disjoint implementation workers and two independent read-only reviews (runner/model safety and app/generation behavior). The integration owner handled shared contracts, regression follow-ups, execution of all tests, and documentation. No commit, push, merge to develop, package replacement, live API call, personal-data migration, or running-app restart was performed in this slice.
 
 Delivered:
 - Optional app-authored plans and bounded named outcomes, preserving older exercise decoding and all existing activity IDs, starter/reference/test code, assessment definitions, effort and reward policy. Exactly four reviewed labs adopted plans; course totals remain 17 chapters / 63 practice / 17 assessments / 51 theory questions.
@@ -96,9 +96,68 @@ Remaining limitations / next slice:
 
 ### Phase 2 — independent problem solving and assessment evidence
 
-- [ ] Replace a fixed exercise quota with authored skill/form coverage: predict, complete, write, diagnose, counterexample, transfer. Keep short tasks short; avoid requiring every form in every chapter.
-- [ ] Gradually reduce scaffolding in later activities while preserving precise input/output contracts, exact examples, and beginner explanations.
-- [ ] Add problem decomposition, naming, refactoring without behavior changes, documentation literacy, useful comments/docstrings, and maintenance/change-request exercises.
+Delivery slices (all preserve separate validation/checkpoint boundaries):
+- **2A — independent practice repertoire (current branch `feature/independent-practice`):** app-authored practice forms, scaffolding/skills/reflection metadata, nine additive exercises, and short planning/refactoring/documentation teaching units. Does not change assessment gates or review schedules.
+- **2B — reviewed offline projects:** four brief-based projects with separately checkable milestones plus an integration check; checkpoint identities and duplicate-XP protections verified before assessment changes.
+- **2C — assessment evidence:** authored assessment/question banks, fresh variants and structured reflection prompts with version-specific saved work, historical mastery preserved, and no AI grading or assistance.
+- **2D — targeted retrieval:** activity-specific review queues, expanding intervals, and concrete deep links, using saved evidence without punitive streaks or mutable reward counters.
+
+#### Phase 2A contract (recorded before implementation)
+
+- [x] Verify user commit/push `32e4992`, merged PR #6, clean tree, and fetched `origin/develop` `b0cf497`; create the new branch from that merged base. Refresh the full-suite baseline while implementation ownership is assigned.
+- [x] Add optional Codable `Exercise.practiceProfile`: form (write/complete/predict/debug/counterexample/transfer/refactor/maintenance/project), scaffolding (guided/light/independent), taught section IDs, and 1–3 reflection prompts. Profiles are app-owned teaching descriptors, not claims of independent completion or mastery; absent metadata remains absent on old saved/generated/legacy work. No provider schema or reward-policy change.
+- [x] Classify all 63 existing current reviewed exercises in an explicit app-owned catalog without changing their IDs, instructions, code, hints, checks, effort, or ordering. Skills must resolve to taught, non-overview lesson sections in the chapter's prerequisite closure or current chapter. Do not infer metadata from provider claims or arbitrary title/code heuristics.
+- [x] Append nine new reviewed exercises with exact new IDs: `basics-transfer-delivery-note`, `values-transfer-workshop-cost`, `decisions-transfer-library-entry`, `loops-transfer-water-log`, `functions-transfer-ticket-total`, `functions-refactor-batch-cost`, `collections-transfer-stock-report`, `collections-maintenance-label-counts`, `reliability-transfer-gradebook`. One transfer per foundation chapter; extra refactoring/maintenance at functions/collections. Do not replace any prior draft interface or completion identity.
+- [x] Use precise contracts/examples but progressively fewer algorithmic instructions. Three graduated hints remain available. New script-level transfers in basics/values/decisions/loops receive bounded named input plans so generalization is tested without requiring untaught functions. Later function tasks use multiple direct calls, boundaries, repeated calls and input-preservation tests. Keep source Python 3.9-compatible and standard-library-only.
+- [x] Teach problem decomposition, meaningful names, behavior-preserving refactoring, reading a function contract/docstring, and useful comments/docstrings through short `###` additions inside existing foundation headings. Keep every existing `#`/`##` heading and section role/ID stable. Examples run standalone; metadata and prose are not automatically scored as understanding.
+- [x] Show practice form/scaffolding plus an expandable taught-skills/reflection guide in the native workspace; use the existing reflection storage unchanged. Keep exercise-picker IDs/order/selection/drafts stable. No filtering/auto-navigation that loses the selected draft, no new assistance charges, no profile UI or new reflection rules in assessment mode. Preserve the code editor's geometry and reading preferences.
+- [x] Verify optional-field decoding, provider metadata exclusion, all current profile references, separate coverage for the original 3+12 foundation activities and the nine new activities, starter/reference execution, likely wrong solutions and equivalent correct solutions, draft/reflection/history isolation, native rendering, and unchanged assessment/reward policy. Never weaken the existing Phase 1A compatibility assertions merely to allow appended work.
+- [x] Gate: coordinated focused tests, full `swift test` compared with the 343-test baseline (seven known layout failures / 18 assertions), Python 3.14 compatibility, representative native screenshots and independent content/code review. Manual/live behavior remains separately outstanding; no commit, push, package replacement, app restart or develop merge is included in this slice.
+
+#### Phase 2A implementation evidence — 2026-10-08
+
+**Implemented and validated on `feature/independent-practice` from merged develop `b0cf497`; changes remain uncommitted.** One compatibility/design investigation preceded five disjoint implementation workers (catalog, native guide, early transfers, functions, records) and two independent read-only reviews. The integration owner handled shared types, persistence/provider exclusions, immutable-prefix tests, documentation and coordinated verification.
+
+Delivered:
+- Profiles for all **72 current reviewed practice activities**: explicit classification of the original 63 plus inline descriptors for nine additions. The 63-task catalog has 34 write / 16 complete / 10 debug / 2 predict / 1 counterexample; additions are 7 transfer / 1 refactor / 1 maintenance. Scaffolding describes task design, never assistance use, independent completion, mastery or XP.
+- Native compact form/scaffolding labels and a collapsible **Skills and reflection** guide in Practice. Skills resolve only to taught, non-overview sections in the current/prerequisite closure. Troubleshooting sections can support prediction, refactoring and maintenance too; their Debug-only restriction remains specific to generation coverage. Reflection storage/requirements are unchanged. Generated/legacy/assessment guides remain absent, and optional teacher snapshots carry only resolved reviewed descriptors on explicit requests.
+- The original 63 activities, assessments, heading/section IDs, reward ratings and saved-work contracts are unchanged. Compatibility tests preserve the exact original 3+12 foundation prefix separately from the new trailing activities; old JSON without profiles still decodes, while unreadable future profile values preserve the saved file. Provider output cannot supply app-owned profiles.
+- Four new early transfers add **32 named rows**, so there are now **60 rows across eight reviewed activities** using named plans and scratch inputs. New function/record tasks test varied calls, boundaries, repeated calls, unchanged inputs and likely incorrect solutions. All starters run standalone and fail checks with AssertionError; all references pass. Equivalent correct approaches are accepted.
+- Short `###` units inside unchanged headings teach decomposition, meaningful names, refactoring, signatures/docstrings, why-focused comments and maintaining old behavior after a requirement change. The refactor checker verifies real helper calls/returned-value use rather than code length; documentation checking is explicitly presence-only, not a claim that explanation quality was graded.
+
+| New activity | Form | Reviewed workload units |
+| --- | --- | ---: |
+| `basics-transfer-delivery-note` | transfer | 1 |
+| `values-transfer-workshop-cost` | transfer | 2 |
+| `decisions-transfer-library-entry` | transfer | 1 |
+| `loops-transfer-water-log` | transfer | 2 |
+| `functions-transfer-ticket-total` | transfer | 2 |
+| `functions-refactor-batch-cost` | refactor | 2 |
+| `collections-transfer-stock-report` | transfer | 2 |
+| `collections-maintenance-label-counts` | maintenance | 1 |
+| `reliability-transfer-gradebook` | transfer | 3 |
+
+All nine have Similar difficulty, totaling **1,600 available first-completion XP**. No historical XP, policy version, chapter prerequisite, assessment gate, or review schedule changed. Course totals are **17 chapters / 72 reviewed practice / 17 coding assessments / 51 theory questions**.
+
+Verification:
+- Refreshed full baseline on the merged, unchanged tree: **343 tests; 336 passed, seven failed tests / 18 assertions, zero skips** (`shell-4ae948`), exactly matching the prior Phase 1B result.
+- Focused curriculum/profile/compatibility/provider run: **53/53 passed** (`shell-0ff808`). Eight new app guide/draft/reflection/teacher/rendering tests: **8/8 passed** (`shell-9e8362`). Independent reviews found no blocking defects; an apparent type-equality concern was checked against the runner's existing type-tagged snapshots and strict-type regressions, not used to weaken checks.
+- Full `swift test`: **388 tests; 381 passed, seven failed tests / 18 assertions, zero skips** (`shell-f6f74c`). All **264 core tests**, **9 Markdown tests**, **10 generated-Debug app tests**, and **45 newly added tests** passed. The only failures are the same editor-height cases with identical numeric assertions as baseline, now at `AppModelTests.swift:3349`; no geometry assertions were relaxed.
+- `PYTHON_TEACHER_TEST_PYTHON=/opt/homebrew/bin/python3 swift test --filter 'CurriculumTests|CurriculumGraphTests|PracticeProfileTests'`, Python **3.14.3**: **115/115 passed, zero skips** (`shell-31eb90`). Default curriculum execution used Python **3.9.6**. This verifies all runnable lesson blocks, reviewed starter/reference contracts, named transfers, helper-reuse checks, record validation, profile links and alternate correct/incorrect implementations in the restricted runner.
+- Native captures in `/tmp/python-teacher-phase2a-snapshots` compare unprofiled, collapsed and expanded guides for guided/transfer/refactor/maintenance activities at 1380×900 and 1080×740. Representative images at both sizes were visually inspected; the native test confirms unchanged editor geometry. Expanded guides use the existing left-panel scroll. These are synthetic native renders, not hands-on keyboard/VoiceOver or packaged-app acceptance.
+- `swift build -c release`: passed (`shell-2dcf34`). `git diff --check`: passed. No commit, push, merge, package replacement, real API request, personal-data migration or app restart was performed. Four new dedicated test files remain untracked until staging.
+
+Next checkpoints / still pending:
+- **2B:** reviewed offline projects with separately checkable milestones and a final integration result, preserving no-duplicate-XP rules.
+- **2C:** assessment/question banks, version-specific saved work, and assessment reflection guidance without AI or text heuristics deciding mastery.
+- **2D:** specific retrieval activities, expanding intervals and review deep links. Current seven-day chapter review is unchanged.
+- Broader mutation coverage for older single-input activities remains part of 2B/2C. The new profile labels alone are not proof of skill mastery, nor a new per-skill progress model. Baseline layout failures, manual acceptance, live provider quality and package-environment approval remain outstanding.
+
+#### Phase 2 master checklist
+
+- [x] Phase 2A: replace a fixed exercise quota with authored skill/form coverage: predict, complete, write, diagnose, counterexample, transfer. Keep short tasks short; avoid requiring every form in every chapter.
+- [x] Phase 2A: add progressively less scaffolded foundation activities while preserving precise input/output contracts, exact examples, and beginner explanations. Later integrated projects continue this progression in 2B.
+- [x] Phase 2A: add problem decomposition, naming, refactoring without behavior changes, documentation literacy, useful comments/docstrings, and maintenance/change-request exercises.
 - [ ] Add reviewed offline milestone projects based on existing briefs: foundation gradebook; CSV cleanup/report with rejected-row reasons; class-based library/ledger with regression tests; two-table report with join validation and interpretation. Recognize the existing reliability assessment as a small integrated task, not a missing feature.
 - [ ] Introduce separately checkable milestones plus an integration check; prevent repeated milestone checks from duplicating completion XP.
 - [ ] Add assessment/question banks and fresh authored variants that measure transfer without withholding helpful feedback. Before functions, use supported input fixtures rather than requiring untaught function syntax.

@@ -226,6 +226,58 @@ final class ProgressTests: XCTestCase {
         XCTAssertEqual(ExperienceRules.completionXP(effort: exercise.effort, mode: .practice), 100)
     }
 
+    func testOptionalPracticeProfilePreservesOlderExercisesAndSavedEvidence() throws {
+        let reviewed = Curriculum.chapters[0].exercises[0]
+        XCTAssertNotNil(reviewed.practiceProfile)
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(reviewed)) as? [String: Any])
+        json.removeValue(forKey: "practiceProfile")
+        let legacy = try JSONDecoder().decode(Exercise.self, from: JSONSerialization.data(withJSONObject: json))
+        var expected = reviewed
+        expected.practiceProfile = nil
+        XCTAssertNil(legacy.practiceProfile)
+        XCTAssertEqual(legacy, expected)
+        XCTAssertEqual(try JSONDecoder().decode(Exercise.self, from: JSONEncoder().encode(reviewed)), reviewed)
+        var state = ProgressState()
+        state.generatedExercises["basics"] = [legacy, reviewed]
+        let key = "basics:practice:\(reviewed.id)"
+        state.drafts[key] = "saved source remains unchanged"
+        state.reflections[key] = "My earlier explanation"
+        state.hintCounts[key] = 2
+        state.revealedSolutions.insert(key)
+        state.attempts = [practiceAttempt(), masteryAttempt(chapter: "basics")]
+        try store.save(state)
+        let loaded = try store.load()
+        XCTAssertEqual(loaded.generatedExercises, state.generatedExercises)
+        XCTAssertEqual(loaded.drafts, state.drafts)
+        XCTAssertEqual(loaded.reflections, state.reflections)
+        XCTAssertEqual(loaded.hintCounts, state.hintCounts)
+        XCTAssertEqual(loaded.revealedSolutions, state.revealedSolutions)
+        XCTAssertEqual(loaded.attempts.map(\.id), state.attempts.map(\.id))
+        XCTAssertEqual(loaded.attempts.map(\.code), state.attempts.map(\.code))
+        XCTAssertEqual(loaded.masteredChapterIDs, state.masteredChapterIDs)
+        XCTAssertEqual(loaded.playerProgress, state.playerProgress)
+        XCTAssertEqual(loaded.rewardPolicyVersion, state.rewardPolicyVersion)
+        XCTAssertEqual(loaded.schemaVersion, state.schemaVersion)
+    }
+
+    func testUnrecognizedPracticeProfilePreservesUnreadableProgress() throws {
+        var state = ProgressState()
+        state.generatedExercises["basics"] = [Curriculum.chapters[0].exercises[0]]
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(state)) as? [String: Any])
+        var generated = try XCTUnwrap(json["generatedExercises"] as? [String: Any])
+        var exercises = try XCTUnwrap(generated["basics"] as? [[String: Any]])
+        var profile = try XCTUnwrap(exercises[0]["practiceProfile"] as? [String: Any])
+        profile["form"] = "unsupported-future-form"
+        exercises[0]["practiceProfile"] = profile
+        generated["basics"] = exercises
+        json["generatedExercises"] = generated
+        let data = try JSONSerialization.data(withJSONObject: json)
+        try install(data)
+        XCTAssertThrowsError(try store.load())
+        XCTAssertThrowsError(try store.save(ProgressState()))
+        XCTAssertEqual(try Data(contentsOf: stateURL), data)
+    }
+
     func testAuthoredCheckPlanRoundTripsWithoutChangingLegacyExerciseOrProgress() throws {
         var exercise = Curriculum.chapters[0].exercises[0]
         let original = exercise

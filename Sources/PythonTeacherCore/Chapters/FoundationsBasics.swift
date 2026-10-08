@@ -352,7 +352,54 @@ extension Curriculum {
                      "front_seats = 4\nback_seats = 3\ntotal_seats = front_seats + back_seats\nprint(total_seats)\n",
                      "assert front_seats == 4 and back_seats == 3\nassert type(total_seats) is int and total_seats == 7\n",
                      ["Successful execution does not guarantee the right result. Compare the saved total after each assignment with your expected total.", "An assignment replaces the value already held by that name. Which assignment runs last for `total_seats`?", "Keep the calculation using both inputs, and remove the later assignment that saves zero before the final print."],
-                     effort: .init(difficulty: .easier, scopeUnits: 1))
+                     effort: .init(difficulty: .easier, scopeUnits: 1)),
+            exercise("basics-transfer-delivery-note", "Plan a delivery note", """
+                     Goal:
+                     Prepare an item count and a text note for an invented delivery. Choose how to combine the names, arithmetic, and text joining you have learned.
+
+                     Starting code:
+                     - Keep the supplied input lines unchanged: `boxes = 3`, `items_per_box = 4`, `loose_items = 2`, `destination = 'Studio'`, and `item_name = 'blankets'`.
+                     - Counts are nonnegative integers; the two text inputs are strings, which may be empty. No invalid inputs need handling.
+                     - Replace the `total_items = 0` and `delivery_note = ''` placeholders. You may add other meaningful names.
+
+                     Your task:
+                     1. Save the integer number of items across all full boxes and loose items in `total_items`.
+                     2. Save `delivery_note` as the destination followed by `': '` and the item name, with no other characters. Keep the count separate from this string.
+
+                     Expected result:
+                     - The supplied inputs give `total_items` equal to `14` and `delivery_note` equal to `'Studio: blankets'`.
+                     - Two boxes of five items with one loose item give `11`; destination `'Hall'` and item name `'cups'` give `'Hall: cups'`.
+                     - With no boxes and no loose items the count is `0`. Empty text still keeps the separator: two empty strings give `': '`.
+
+                     Check:
+                     Choose **Check solution**. Fresh named cases check changed counts, zero boxes, loose items alone, and changed or empty text; the original example must pass too. Results must be saved, not only printed. A failed case leaves later cases not reached.
+
+                     To explore without changing your draft, awarding XP, or completing the exercise, enter a Python literal (a value written directly, such as `2` or `'Hall'`) in an Experiment field and choose **Run experiment**. Keep the supplied input lines unchanged for checking.
+                     """,
+                     "boxes = 3\nitems_per_box = 4\nloose_items = 2\ndestination = 'Studio'\nitem_name = 'blankets'\ntotal_items = 0\ndelivery_note = ''\n",
+                     "boxes = 3\nitems_per_box = 4\nloose_items = 2\ndestination = 'Studio'\nitem_name = 'blankets'\ntotal_items = boxes * items_per_box + loose_items\ndelivery_note = destination + ': ' + item_name\n",
+                     "assert boxes == 3 and items_per_box == 4 and loose_items == 2\nassert destination == 'Studio' and item_name == 'blankets'\nassert type(total_items) is int and total_items == 14\nassert type(delivery_note) is str and delivery_note == 'Studio: blankets'\n",
+                     ["Separate the two requested results: which inputs describe quantities, and which describe the note?", "Every box contributes the same number of items. Loose items are additional, not another box. Text joining adds no punctuation of its own.", "Calculate `boxes * items_per_box + loose_items`. Join `destination`, `': '`, and `item_name` for the note; both results should use the inputs rather than fixed answers."],
+                     effort: .init(difficulty: .similar, scopeUnits: 1),
+                     checkPlan: .init(inputs: [
+                        .init(name: "boxes", defaultLiteral: "3"),
+                        .init(name: "items_per_box", defaultLiteral: "4"),
+                        .init(name: "loose_items", defaultLiteral: "2"),
+                        .init(name: "destination", defaultLiteral: "'Studio'"),
+                        .init(name: "item_name", defaultLiteral: "'blankets'")
+                     ], checks: [
+                        .init(id: "original-count", title: "Original delivery: item count", target: "total_items", expectedLiteral: "14"),
+                        .init(id: "original-note", title: "Original delivery: note", target: "delivery_note", expectedLiteral: "'Studio: blankets'"),
+                        .init(id: "changed-count", title: "Two boxes of five plus one loose item", inputs: ["boxes": "2", "items_per_box": "5", "loose_items": "1"], target: "total_items", expectedLiteral: "11"),
+                        .init(id: "changed-note", title: "Cups for the hall", inputs: ["destination": "'Hall'", "item_name": "'cups'"], target: "delivery_note", expectedLiteral: "'Hall: cups'"),
+                        .init(id: "zero-count", title: "No boxes or loose items", inputs: ["boxes": "0", "loose_items": "0"], target: "total_items", expectedLiteral: "0"),
+                        .init(id: "loose-only", title: "No boxes but five loose items", inputs: ["boxes": "0", "loose_items": "5"], target: "total_items", expectedLiteral: "5"),
+                        .init(id: "empty-note", title: "Empty text keeps its separator", inputs: ["destination": "''", "item_name": "''"], target: "delivery_note", expectedLiteral: "': '"),
+                        .init(id: "empty-destination", title: "An empty destination keeps the item name", inputs: ["destination": "''"], target: "delivery_note", expectedLiteral: "': blankets'")
+                     ]),
+                     practiceProfile: .init(form: .transfer, scaffolding: .independent,
+                                            skillIDs: ["basics-section-2", "basics-section-3", "basics-section-4"],
+                                            reflectionPrompts: ["Which inputs belong to each result?", "Why does zero boxes still allow a nonzero item count?"]))
         ],
         assessment: exercise("basics-assessment", "Prepare a simple picnic note", """
                              Goal:
