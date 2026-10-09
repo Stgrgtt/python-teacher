@@ -153,6 +153,12 @@ Next checkpoints / still pending:
 - **2D:** specific retrieval activities, expanding intervals and review deep links. Current seven-day chapter review is unchanged.
 - Broader mutation coverage for older single-input activities remains part of 2B/2C. The new profile labels alone are not proof of skill mastery, nor a new per-skill progress model. Baseline layout failures, manual acceptance, live provider quality and package-environment approval remain outstanding.
 
+#### Editor-height baseline fix — 2026-10-08, branch `fix/editor-height-baseline`
+
+- [x] Root cause: since the initial commit, the workspace `VSplitView` split the editor and output roughly evenly, and at 1080×740 it compressed the editor to its 330pt floor. `assertCodingArea` (editor > 45% of window height) was correct; the layout was not. This caused the seven long-standing failing tests / 18 assertions (editor 330–356.5pt versus required >333/>405pt).
+- [x] Fix in `WorkspaceView.codingWorkspace`: the editor has split layout priority, and the output panel's minimum height rose from 80 to 150pt, so the default output still shows a whole failure card or the first named checks. The divider remains user-draggable. No assertion was changed or relaxed.
+- [x] Full `swift test`: **388 tests, zero failures, zero skips** — first fully green suite in this roadmap. Native captures in `/tmp/python-teacher-editor-split-snapshots` (practice, failure card, named checks, minimum assessment) were visually inspected at both sizes. `bash scripts/package-app.sh` rebuilt `dist/Python Teacher.app` (arm64) from this branch; the running app was not restarted. Hands-on divider dragging remains a manual check.
+
 #### Phase 2 master checklist
 
 - [x] Phase 2A: replace a fixed exercise quota with authored skill/form coverage: predict, complete, write, diagnose, counterexample, transfer. Keep short tasks short; avoid requiring every form in every chapter.
